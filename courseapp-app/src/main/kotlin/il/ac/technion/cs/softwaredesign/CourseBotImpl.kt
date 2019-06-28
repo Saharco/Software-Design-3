@@ -5,11 +5,15 @@ import il.ac.technion.cs.softwaredesign.exceptions.NoSuchEntityException
 import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
+import il.ac.technion.cs.softwaredesign.messages.MessageFactory
 import java.time.LocalDateTime
+import java.util.*
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
+import kotlin.Comparator
+import kotlin.collections.ArrayList
 
-class CourseBotImpl @Inject constructor(private val app: CourseApp, private val name: String, private val token: String)
+class CourseBotImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory, private val name: String, private val token: String)
     : CourseBot {
 
     private val channelsList = ArrayList<String>()
@@ -18,7 +22,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private var calculatorTrigger: String? = null
     private var tippingTrigger: String? = null
 
-    private val ledgerMap = mutableMapOf<Pair<String, String>, Long>()
+    private val ledgerMap = mutableMapOf<String, MutableMap<String, Long>>()
 
     private val keywordTrackerMap = mutableMapOf<Pair<String?, MediaType?>, ArrayList<Pair<Regex, Long>>>()
 
@@ -35,6 +39,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             app.addListener(token, ::messageCounterCallback)
         }.thenCompose {
             app.addListener(token, ::keywordTrackingCallback)
+        }.thenCompose {
+            app.addListener(token, ::calculatorCallback)
         }.join()
     }
 
@@ -163,18 +169,48 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.supplyAsync {
             if (!channelsList.contains(channel))
                 throw NoSuchEntityException()
-
-
-            "shut up linter"
+            val channelLedger = ledgerMap[channel]!!
+            var max = 1000L // TODO: check this
+            var richestUser: String? = null
+            for ((user, money) in channelLedger) {
+                if (money > max) {
+                    max = money
+                    richestUser = user
+                }
+                if (money == max) {
+                    richestUser = null
+                }
+            }
+            richestUser
         }
     }
 
+    //     private val surveyMap = mutableMapOf<String, ArrayList<Pair<String, Long>>>()
     override fun runSurvey(channel: String, question: String, answers: List<String>): CompletableFuture<String> {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        return CompletableFuture.supplyAsync {
+            if (!channelsList.contains(channel))
+                throw NoSuchEntityException()
+            val identifier = generateSurveyIdentifier()
+            val newSurveyList = ArrayList<Pair<String, Long>>()
+            for (answer in answers) {
+                newSurveyList.add(Pair(answer, 0L))
+            }
+            surveyMap[identifier] = newSurveyList
+            identifier
+        }
     }
 
+    private fun generateSurveyIdentifier() = "$name${LocalDateTime.now()}"
+
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        return CompletableFuture.supplyAsync {
+            val resultPairs = surveyMap[identifier] ?: ArrayList()
+            val countResultList = ArrayList<Long>()
+            for ((_, count) in resultPairs) {
+                countResultList.add(count)
+            }
+            countResultList
+        }
     }
 
     private fun lastMessageCallback(source: String, msg: Message): CompletableFuture<Unit> {
@@ -220,6 +256,45 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 }
                 keywordTrackerMap[pair] = channelTrackers
             }
+        }
+    }
+
+    private fun calculatorCallback(source: String, msg: Message): CompletableFuture<Unit> {
+        return CompletableFuture.supplyAsync {
+            if (isChannelMessage(source)
+                    && msg.media == MediaType.TEXT
+                    && messageStartsWithTrigger(calculatorTrigger, msg)) {
+                calculateExpression(msg)
+            } else {
+                null
+            }
+        }.thenCompose { calculation ->
+            if (calculation == null)
+                null
+            else {
+                msgFactory.create(MediaType.TEXT, calculation.toString().toByteArray())
+            }
+        }.thenCompose { message ->
+            if (message == null) {
+                CompletableFuture.completedFuture(Unit)
+            } else {
+                app.channelSend(token, extractChannelName(source)!!, message)
+            }
+        }
+    }
+
+    private fun messageStartsWithTrigger(trigger: String?, msg: Message): Boolean {
+        trigger ?: return false
+        val msgContent = msg.contents.toString()
+        return msgContent.startsWith(trigger)
+    }
+
+    private fun calculateExpression(msg: Message): Int? {
+        val expression = msg.contents.toString().substringAfter("${calculatorTrigger!!} ")
+        return try {
+            calculatorEngine.eval(expression) as Int
+        } catch (e: Exception) {
+            null
         }
     }
 
