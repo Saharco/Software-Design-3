@@ -7,14 +7,12 @@ import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
 import java.time.LocalDateTime
-import java.util.*
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
-import kotlin.Comparator
 import kotlin.collections.ArrayList
 
-class CourseBotImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory, private val name: String, private val token: String)
-    : CourseBot {
+class CourseBotImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory,
+                                        private val name: String, private val token: String) : CourseBot {
 
     private val channelsList = ArrayList<String>()
 
@@ -41,6 +39,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             app.addListener(token, ::keywordTrackingCallback)
         }.thenCompose {
             app.addListener(token, ::calculatorCallback)
+        }.thenCompose{
+            app.addListener(token, ::tippingCallback)
         }.join()
     }
 
@@ -150,20 +150,20 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             mostActiveUser[channel]
         }
     }
-
-    private fun getKthTopUserCounter(list: ArrayList<String>, k: Int = 0): Pair<Long, String>? {
-        if (k >= list.size)
-            return null
-        val compareCounterEntries = Comparator<String> { entry1, entry2 ->
-            val count1 = entry1.substringBefore('/').toInt()
-            val count2 = entry2.substringBefore('/').toInt()
-            count1 - count2
-        }
-
-        val listCopy = ArrayList(list)
-        listCopy.sortWith(compareCounterEntries)
-        return parseChannelCounterEntry(listCopy[listCopy.size - (k + 1)])
-    }
+//
+//    private fun getKthTopUserCounter(list: ArrayList<String>, k: Int = 0): Pair<Long, String>? {
+//        if (k >= list.size)
+//            return null
+//        val compareCounterEntries = Comparator<String> { entry1, entry2 ->
+//            val count1 = entry1.substringBefore('/').toInt()
+//            val count2 = entry2.substringBefore('/').toInt()
+//            count1 - count2
+//        }
+//
+//        val listCopy = ArrayList(list)
+//        listCopy.sortWith(compareCounterEntries)
+//        return parseChannelCounterEntry(listCopy[listCopy.size - (k + 1)])
+//    }
 
     override fun richestUser(channel: String): CompletableFuture<String?> {
         return CompletableFuture.supplyAsync {
@@ -279,6 +279,54 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 CompletableFuture.completedFuture(Unit)
             } else {
                 app.channelSend(token, extractChannelName(source)!!, message)
+            }
+        }
+    }
+
+    private fun tippingCallback(source: String, msg: Message): CompletableFuture<Unit> {
+        return CompletableFuture.supplyAsync {
+            if (isChannelMessage(source)
+                    && msg.media == MediaType.TEXT
+                    && messageStartsWithTrigger(tippingTrigger, msg))
+                msg.contents.toString().substringAfter("${tippingTrigger!!} ")
+            else
+                null
+        }.thenCompose { msgSuffix ->
+            if (msgSuffix == null)
+                CompletableFuture.completedFuture(false)
+            else {
+                val receiver = msgSuffix.substringAfter(' ')
+                app.isUserInChannel(token, extractChannelName(source)!!, receiver)
+            }
+        }.thenApply { isMember ->
+            if (!isMember)
+                Unit
+            else {
+                val channelLedgerMap: MutableMap<String, Long>
+                if (ledgerMap[source] == null) {
+                    channelLedgerMap = mutableMapOf()
+                    ledgerMap[source] = channelLedgerMap
+                } else
+                    channelLedgerMap = ledgerMap[source]!!
+
+                val contentSuffix = msg.contents.toString().substringAfter("${tippingTrigger!!} ")
+                val amount = contentSuffix.substringBefore(' ').toLong()
+                val receiverName = contentSuffix.substringAfter(' ')
+                var senderBalance = channelLedgerMap[extractSenderUsername(source)]
+                var receiverBalance = channelLedgerMap[receiverName]
+
+                if (senderBalance == null)
+                    senderBalance = 1000L
+
+                if (receiverBalance == null)
+                    receiverBalance = 1000L
+
+                senderBalance -= amount
+                receiverBalance += amount
+
+                channelLedgerMap[extractSenderUsername(source)] = senderBalance
+                channelLedgerMap[receiverName] = receiverBalance
+                ledgerMap[source] = channelLedgerMap
             }
         }
     }
