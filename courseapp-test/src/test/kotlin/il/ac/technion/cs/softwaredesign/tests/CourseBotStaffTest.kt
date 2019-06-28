@@ -72,7 +72,7 @@ class CourseBotStaffTest {
                             .thenCompose { courseApp.login("matan", "s3kr3t") }
                             .thenCompose { token -> courseApp.channelJoin(token, "#channel").thenApply { token } }
                             .thenCompose { token -> courseApp.addListener(token, listener).thenApply { token } }
-                            .thenCompose { token -> courseApp.channelSend(token, "#channel", messageFactory.create(MediaType.TEXT, "calculate 20 * 2 + 2".toByteArray()).join()) }
+                            .thenCompose { token -> courseApp.channelSend(token, "#channel", messageFactory.create(MediaType.TEXT, " calculate 20 * 2 +2".toByteArray()).join()) }
                 }.join()
 
         verify {
