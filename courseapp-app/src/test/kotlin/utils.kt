@@ -1,6 +1,9 @@
+import com.natpryce.hamkrest.*
 import il.ac.technion.cs.softwaredesign.CourseApp
 import fakes.CourseAppStatistics
 import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.function.ThrowingSupplier
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -270,6 +273,29 @@ fun populateWithRandomStrings(list: ArrayList<String>, amount: Int = 100,
         list.add(randomString)
     }
 }
+
+val isTrue = equalTo(true)
+val isFalse = equalTo(false)
+
+fun <T> containsElementsInOrder(vararg elements: T): Matcher<Collection<T>> {
+    val perElementMatcher = object : Matcher.Primitive<Collection<T>>() {
+        override fun invoke(actual: Collection<T>): MatchResult {
+            elements.zip(actual).forEach {
+                if (it.first != it.second)
+                    return MatchResult.Mismatch("${it.first} does not equal ${it.second}")
+            }
+            return MatchResult.Match
+        }
+
+        override val description = "is ${describe(elements)}"
+        override val negatedDescription = "is not ${describe(elements)}"
+    }
+    return has(Collection<T>::size, equalTo(elements.size)) and perElementMatcher
+}
+
+// This is a tiny wrapper over assertTimeoutPreemptively which makes the syntax slightly nicer.
+fun <T> runWithTimeout(timeout: Duration, executable: () -> T): T =
+        Assertions.assertTimeoutPreemptively(timeout, ThrowingSupplier(executable))
 
 /**
  * Perform [CompletableFuture.join], and if an exception is thrown, unwrap the [CompletionException] and throw the

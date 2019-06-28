@@ -14,9 +14,11 @@ import kotlin.collections.ArrayList
 class CourseBotImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory,
                                         private val name: String, private val token: String) : CourseBot {
 
+    private val charset = Charsets.UTF_8
+
     private val channelsList = ArrayList<String>()
 
-    private val calculatorEngine = ScriptEngineManager().getEngineByName("Javascript")
+    private val calculatorEngine = ScriptEngineManager().getEngineByName("JavaScript")
     private var calculatorTrigger: String? = null
     private var tippingTrigger: String? = null
 
@@ -39,7 +41,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             app.addListener(token, ::keywordTrackingCallback)
         }.thenCompose {
             app.addListener(token, ::calculatorCallback)
-        }.thenCompose{
+        }.thenCompose {
             app.addListener(token, ::tippingCallback)
         }.join()
     }
@@ -249,7 +251,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             val channelTrackers = keywordTrackerMap[pair]
             if (channelTrackers != null) {
                 for ((regex, counter) in channelTrackers) {
-                    if (regex matches msg.contents.toString()) {
+                    if (regex matches msg.contents.toString(charset)) {
                         channelTrackers.remove(Pair(regex, counter))
                         channelTrackers.add(Pair(regex, counter + 1))
                     }
@@ -288,7 +290,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             if (isChannelMessage(source)
                     && msg.media == MediaType.TEXT
                     && messageStartsWithTrigger(tippingTrigger, msg))
-                msg.contents.toString().substringAfter("${tippingTrigger!!} ")
+                msg.contents.toString(charset).substringAfter("${tippingTrigger!!} ")
             else
                 null
         }.thenCompose { msgSuffix ->
@@ -309,7 +311,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 } else
                     channelLedgerMap = ledgerMap[source]!!
 
-                val contentSuffix = msg.contents.toString().substringAfter("${tippingTrigger!!} ")
+                val contentSuffix = msg.contents.toString(charset).substringAfter("${tippingTrigger!!} ")
                 val amount = contentSuffix.substringBefore(' ').toLong()
                 val receiverName = contentSuffix.substringAfter(' ')
                 var senderBalance = channelLedgerMap[extractSenderUsername(source)]
@@ -333,12 +335,12 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 
     private fun messageStartsWithTrigger(trigger: String?, msg: Message): Boolean {
         trigger ?: return false
-        val msgContent = msg.contents.toString()
+        val msgContent = msg.contents.toString(charset)
         return msgContent.startsWith(trigger)
     }
 
     private fun calculateExpression(msg: Message): Int? {
-        val expression = msg.contents.toString().substringAfter("${calculatorTrigger!!} ")
+        val expression = msg.contents.toString(charset).substringAfter("${calculatorTrigger!!} ")
         return try {
             calculatorEngine.eval(expression) as Int
         } catch (e: Exception) {

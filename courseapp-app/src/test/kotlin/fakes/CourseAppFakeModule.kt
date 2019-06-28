@@ -19,7 +19,7 @@ import java.util.concurrent.CompletableFuture
 class CourseAppFakeModule : KotlinModule() {
 
     override fun configure() {
-        bind<CourseApp>().to<CourseAppFake>()
+        bind<CourseApp>().to<CourseAppFake>().asEagerSingleton()
         bind<CourseAppStatistics>().to<CourseAppStatisticsImpl>()
         bind<CourseAppInitializer>().to<CourseAppInitializerFake>()
         bind<MessageFactory>().to<MessageFactoryImpl>()
