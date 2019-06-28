@@ -6,6 +6,7 @@ import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
+import io.reactivex.Completable
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
@@ -262,26 +263,17 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     private fun calculatorCallback(source: String, msg: Message): CompletableFuture<Unit> {
-        return CompletableFuture.supplyAsync {
-            if (isChannelMessage(source)
-                    && msg.media == MediaType.TEXT
-                    && messageStartsWithTrigger(calculatorTrigger, msg)) {
-                calculateExpression(msg)
-            } else {
-                null
-            }
-        }.thenCompose { calculation ->
-            if (calculation == null)
-                null
-            else {
-                msgFactory.create(MediaType.TEXT, calculation.toString().toByteArray())
-            }
-        }.thenCompose { message ->
-            if (message == null) {
-                CompletableFuture.completedFuture(Unit)
-            } else {
-                app.channelSend(token, extractChannelName(source)!!, message)
-            }
+        if (!isChannelMessage(source)
+                || msg.media != MediaType.TEXT
+                || !messageStartsWithTrigger(calculatorTrigger, msg)) {
+            calculateExpression(msg)
+            return CompletableFuture.completedFuture(Unit)
+        }
+
+        val calculationResult = calculateExpression(msg) ?: return CompletableFuture.completedFuture(Unit)
+
+        return msgFactory.create(MediaType.TEXT, calculationResult.toString().toByteArray()).thenCompose { message ->
+            app.channelSend(token, extractChannelName(source)!!, message)
         }
     }
 

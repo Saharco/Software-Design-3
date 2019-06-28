@@ -75,12 +75,10 @@ class CourseBotTest {
                             .thenCompose { token -> courseApp.channelSend(token, "#channel", messageFactory.create(MediaType.TEXT, "calculate 20 * 2 +2".toByteArray()).join()) }
                 }.join()
 
-        verify(exactly = 2) { listener.invoke(any(), any()) }
-//
-//        verify {
-//            listener.invoke("#channel@matan", any())
-//            listener.invoke("#channel@Anna0", match { it.contents.toString().toInt() == 42 })
-//        }
+        verify {
+            listener.invoke("#channel@matan", any())
+            listener.invoke("#channel@Anna0", match { it.contents.toString().toInt() == 42 })
+        }
     }
 
     @Test
@@ -123,7 +121,7 @@ class CourseBotTest {
                 }.join()
 
         assertThat(runWithTimeout(ofSeconds(10)) {
-            bots.bot("Anna0").thenCompose { bot -> bot.count(regex =  regex) }.join()
+            bots.bot("Anna0").thenCompose { bot -> bot.count(regex = regex) }.join()
         }, equalTo(1L))
     }
 
