@@ -18,8 +18,15 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private val ledgerMap = mutableMapOf<Pair<String, String>, Long>()
     private val keywordTrackerMap = mutableMapOf<Triple<String?, Regex?, MediaType?>, Long>()
     private val userLastMessageMap = mutableMapOf<String, LocalDateTime?>()
-    private val userMessageCounterMap = mutableMapOf<String, ArrayList<Pair<String, Long>>>()
+    // Map of this format: channel -> ${counter}+'/'+${username}
+    private val userMessageCounterMap = mutableMapOf<String, ArrayList<String>>()
     private val surveyMap = mutableMapOf<String, ArrayList<Pair<String, Long>>>()
+
+    init {
+        app.addListener(token, ::lastMessageCallback).thenCompose {
+            app.addListener(token, ::messageCounterCallback)
+        }.join()
+    }
 
     override fun join(channelName: String): CompletableFuture<Unit> {
         if (!validChannelName(channelName))
@@ -28,17 +35,19 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             return CompletableFuture.completedFuture(Unit)
         return app.channelJoin(token, channelName).thenApply {
             channelsList.add(channelName)
-        }.thenCompose {
-            app.addListener(token, )
+            Unit
         }
     }
 
     override fun part(channelName: String): CompletableFuture<Unit> {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        return app.channelPart(token, channelName).thenApply {
+            channelsList.remove(channelName)
+            Unit
+        }
     }
 
     override fun channels(): CompletableFuture<List<String>> {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        return CompletableFuture.completedFuture(channelsList)
     }
 
     override fun beginCount(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Unit> {
@@ -109,16 +118,36 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     private fun messageCounterCallback(source: String, msg: Message): CompletableFuture<Unit> {
-        // private val userMessageCounterMap = mutableMapOf<String, ArrayList<Pair<String, Long>>>()
         return CompletableFuture.supplyAsync {
             if (!isChannelMessage(source))
                 Unit
             else {
-                val channelName = extractChannelName(source)
-                val channelCounterList = userMessageCounterMap[channelName]
-                if (userMessageCounterMap[channelName] == null)
+                val channelName = extractChannelName(source)!!
+                val userName = extractSenderUsername(source)
+                val channelCounterList = userMessageCounterMap[channelName] ?: ArrayList()
+                incrementChannelCounterList(channelCounterList, userName)
+                userMessageCounterMap[channelName] = channelCounterList
             }
         }
+    }
+
+    private fun incrementChannelCounterList(channelCounterList: ArrayList<String>, userName: String) {
+        var existsFlag = false
+        for (i in 0 until channelCounterList.size) {
+            val (count, otherUser) = parseChannelCounterEntry(channelCounterList[i])
+            if (otherUser != userName) continue
+            existsFlag = true
+            val newCount = count + 1
+            channelCounterList[i] = "$newCount/$userName"
+        }
+
+        if (existsFlag) {
+            channelCounterList.add("1/$userName")
+        }
+    }
+
+    private fun parseChannelCounterEntry(entry: String): Pair<Long, String> {
+        return Pair(entry.substringBefore('/').toLong(), entry.substringAfter('/'))
     }
 
     private fun isBroadcastMessage(source: String): Boolean {
