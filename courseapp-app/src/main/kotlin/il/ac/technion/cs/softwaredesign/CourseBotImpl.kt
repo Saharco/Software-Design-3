@@ -268,7 +268,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.supplyAsync {
             if (isChannelMessage(source)
                     && msg.media == MediaType.TEXT) {
-                val channelName = extractChannelName(source)!!
+                val messageChannelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
                 val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
@@ -285,7 +285,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         }
                     }
                     //add the user answer
-                    if (id.startsWith(channelName)) {
+                    if (id.startsWith(messageChannelName)) {
                         for ((i, pair) in surveyListOfAnswers.withIndex()) {
                             val answer = pair.first
                             val counter = pair.second
