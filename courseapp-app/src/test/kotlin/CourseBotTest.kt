@@ -223,18 +223,13 @@ class CourseBotTest {
                 MediaType.TEXT, "first message".toByteArray()).join()).join()
 
         val time2 = bot.seenTime("sahar").join()!!
-
-        var diff = time1.until(time2, ChronoUnit.MILLIS)
-        assertTrue(diff > 200)
-        Thread.sleep(200)
+        assertTrue(time2.toString() > time1.toString())
 
         courseApp.channelSend(adminToken, "#TakeCare2", messageFactory.create(
-                MediaType.TEXT, "second message".toByteArray()).join())
+                MediaType.TEXT, "second message".toByteArray()).join()).join()
 
         val time3 = bot.seenTime("sahar").join()!!
-
-        diff = time2.until(time3, ChronoUnit.MILLIS)
-        assertTrue(diff > 200)
+        assertTrue(time3.toString() > time2.toString())
     }
 
     @Test
