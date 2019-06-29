@@ -33,8 +33,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private var mostActiveUser: MutableMap<String, String?> = mutableMapOf()
     private var mostActiveUserMessageCount: MutableMap<String, Long?> = mutableMapOf()
 
-    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
-
+    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>() // channel -> List(answer, counter)
+    private val surveyVoters = mutableMapOf<String, MutableMap<String, String>>() // userName -> Map(id -> answer)
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
             app.addListener(token, ::messageCounterCallback)
@@ -263,16 +263,33 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             if (isChannelMessage(source)
                     && msg.media == MediaType.TEXT) {
                 val channelName = extractChannelName(source)!!
+                val userName = extractSenderUsername(source)
+
+                val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
                 for ((id, surveyListOfAnswers) in surveyMap) {
+                    //remove first answer of the user if he answered this survey
+                    if (voterList.containsKey(id)) {
+                        for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                            val answer = pair.first
+                            val counter = pair.second
+                            if (answer == voterList[id]) {
+                                surveyListOfAnswers[i] = Pair(answer, counter - 1)
+                                voterList.remove(id)
+                            }
+                        }
+                    }
+                    //add the user answer
                     if (id.startsWith(channelName)) {
                         for ((i, pair) in surveyListOfAnswers.withIndex()) {
                             val answer = pair.first
                             val counter = pair.second
                             if (answer == msg.contents.toString(charset))
                                 surveyListOfAnswers[i] = Pair(answer, counter + 1)
+                            voterList[id] = answer
                         }
                     }
                 }
+                surveyVoters[userName] = voterList
             }
         }
     }
