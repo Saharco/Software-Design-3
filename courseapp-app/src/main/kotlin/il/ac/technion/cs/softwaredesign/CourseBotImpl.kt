@@ -150,7 +150,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
         return CompletableFuture.supplyAsync {
-            val resultPairs = surveyMap[identifier] ?: ArrayList()
+            val resultPairs = surveyMap[identifier] ?: throw NoSuchEntityException()
             val countResultList = ArrayList<Long>()
             for ((_, count) in resultPairs) {
                 countResultList.add(count)
