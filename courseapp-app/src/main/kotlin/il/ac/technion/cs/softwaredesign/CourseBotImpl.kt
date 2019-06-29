@@ -11,34 +11,10 @@ import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
 import kotlin.collections.ArrayList
-
-class CourseBotImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory,
+import il.ac.technion.cs.softwaredesign.lib.db.Database
+class CourseBotImpl @Inject constructor(private val app: CourseApp, private val db: Database, private val msgFactory: MessageFactory,
                                         private val name: String, private val token: String) : CourseBot {
 
-    private val charset = Charsets.UTF_8
-
-    private val channelsList = ArrayList<String>()
-
-    private val calculatorEngine = ScriptEngineManager().getEngineByName("JavaScript")
-    private var calculatorTrigger: String? = null
-    private var tippingTrigger: String? = null
-
-    private val keywordsTracker = KeywordsTracker()
-
-    // Map: channel -> (username, count)
-    private val ledgerMap = mutableMapOf<String, MutableMap<String, Long>>()
-    // Map: username -> date
-    private val userLastMessageMap = mutableMapOf<String, LocalDateTime?>()
-    // Map: channel -> Lists(${counter}+'/'+${username})
-    private val userMessageCounterMap = mutableMapOf<String, ArrayList<String>>()
-    // Map: channel -> username?
-    private var channelMostActiveUserMap: MutableMap<String, String?> = mutableMapOf()
-    // Map: channel -> count?
-    private var channelMostActiveUserMessageCountMap: MutableMap<String, Long?> = mutableMapOf()
-    // Map: channel -> List(answer, counter)
-    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
-    // Map: userName -> (id -> answer)
-    private val surveyVoters = mutableMapOf<String, MutableMap<String, String>>()
 
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
@@ -59,7 +35,12 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             return CompletableFuture.supplyAsync { throw UserNotAuthorizedException() }
         if (channelsList.contains(channelName))
             return CompletableFuture.completedFuture(Unit)
-        return app.channelJoin(token, channelName).thenApply {
+        return app.channelJoin(token, channelName).thenCompose {
+            db.document("bots").find(name, listOf("channelsList")).execute()
+        }.thenApply { result ->
+
+        }
+                thenApply { channelsList ->
             channelsList.add(channelName)
             Unit
         }
