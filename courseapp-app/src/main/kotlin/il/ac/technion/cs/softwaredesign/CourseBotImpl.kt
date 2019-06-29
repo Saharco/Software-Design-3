@@ -6,6 +6,7 @@ import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
+import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
@@ -24,7 +25,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 
     private val ledgerMap = mutableMapOf<String, MutableMap<String, Long>>()
 
-    private val keywordTrackerMap = mutableMapOf<Pair<String?, MediaType?>, ArrayList<Pair<Regex, Long>>>()
+    private val keywordsTracker = KeywordsTracker()
 
     private val userLastMessageMap = mutableMapOf<String, LocalDateTime?>()
     // Map of this format: channel -> ${counter}+'/'+${username}
@@ -73,36 +74,11 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     override fun beginCount(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Unit> {
-        if (regex == null && mediaType == null)
-            return CompletableFuture.supplyAsync { throw IllegalArgumentException() }
-        return CompletableFuture.supplyAsync {
-            val actualRegex = if (regex == null) Regex("(?s).*") else Regex(regex)
-            if (keywordTrackerMap[Pair(channel, mediaType)] == null)
-                keywordTrackerMap[Pair(channel, mediaType)] = ArrayList()
-            val channelTrackers = keywordTrackerMap[Pair(channel, mediaType)]
-            for ((reg, count) in channelTrackers!!)
-                if (reg == actualRegex)
-                    channelTrackers.remove(Pair(reg, count))
-            channelTrackers.add(Pair(actualRegex, 0L))
-            keywordTrackerMap[Pair(channel, mediaType)] = channelTrackers
-            Unit
-        }
+        return CompletableFuture.supplyAsync { keywordsTracker[channel, mediaType] = regex }
     }
 
     override fun count(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Long> {
-        return CompletableFuture.supplyAsync {
-            val channelTrackers = keywordTrackerMap[Pair(channel, mediaType)] ?: throw IllegalArgumentException()
-            val actualRegex = if (regex == null) Regex("(?s).*") else Regex(regex)
-            getRegexCount(channelTrackers, actualRegex)
-        }
-    }
-
-    private fun getRegexCount(channelTrackers: ArrayList<Pair<Regex, Long>>, regex: Regex): Long {
-        for ((reg, count) in channelTrackers) {
-            if (reg == regex)
-                return count
-        }
-        return 0L // we shouldn't get here
+        return CompletableFuture.completedFuture(keywordsTracker[channel, mediaType, regex])
     }
 
     override fun setCalculationTrigger(trigger: String?): CompletableFuture<String?> {
@@ -124,26 +100,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     override fun seenTime(user: String): CompletableFuture<LocalDateTime?> {
         return CompletableFuture.completedFuture(userLastMessageMap[user])
     }
-
-    /*
-    override fun mostActiveUser(channel: String): CompletableFuture<String?> {
-        return CompletableFuture.supplyAsync {
-            val channelCounters = userMessageCounterMap[channel]
-            if (channelCounters == null)
-                null
-            else {
-                val topPair = getKthTopUserCounter(channelCounters)
-                val secondPair = getKthTopUserCounter(channelCounters, k = 1)
-
-                if (topPair == null || (secondPair != null && topPair.first == secondPair.first))
-                    null
-                else
-                    topPair.second
-            }
-        }
-    }
-
-     */
 
     override fun mostActiveUser(channel: String): CompletableFuture<String?> {
         return CompletableFuture.supplyAsync {
@@ -167,8 +123,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                     if (money > max) {
                         max = money
                         richestUser = user
-                    }
-                    else if (money == max) {
+                    } else if (money == max) {
                         richestUser = null
                     }
                 }
@@ -177,7 +132,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }
     }
 
-    //     private val surveyMap = mutableMapOf<String, ArrayList<Pair<String, Long>>>()
     override fun runSurvey(channel: String, question: String, answers: List<String>): CompletableFuture<String> {
         return CompletableFuture.supplyAsync {
             if (!channelsList.contains(channel))
@@ -234,21 +188,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     private fun keywordTrackingCallback(source: String, msg: Message): CompletableFuture<Unit> {
-        return CompletableFuture.supplyAsync {
-            val messageChannelName: String? = extractChannelName(source)
-            val messageMediaType = msg.media
-            val pair = Pair(messageChannelName, messageMediaType)
-            val channelTrackers = keywordTrackerMap[pair]
-            if (channelTrackers != null) {
-                for ((regex, counter) in channelTrackers) {
-                    if (regex matches msg.contents.toString(charset)) {
-                        channelTrackers.remove(Pair(regex, counter))
-                        channelTrackers.add(Pair(regex, counter + 1))
-                    }
-                }
-                keywordTrackerMap[pair] = channelTrackers
-            }
-        }
+        return CompletableFuture.completedFuture(
+                keywordsTracker.track(extractChannelName(source), msg.media, msg.contents.toString(charset)))
     }
 
     private fun calculatorCallback(source: String, msg: Message): CompletableFuture<Unit> {
