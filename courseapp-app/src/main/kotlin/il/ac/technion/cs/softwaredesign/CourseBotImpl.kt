@@ -6,7 +6,6 @@ import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
-import io.reactivex.Completable
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
@@ -172,7 +171,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.supplyAsync {
             if (!channelsList.contains(channel))
                 throw NoSuchEntityException()
-            val channelLedger = ledgerMap[channel]!!
+            val channelLedger = ledgerMap[channel]!! //FIXME: null pointer exception here!!!
             var max = 1000L // TODO: check this
             var richestUser: String? = null
             for ((user, money) in channelLedger) {
@@ -266,7 +265,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         if (!isChannelMessage(source)
                 || msg.media != MediaType.TEXT
                 || !messageStartsWithTrigger(calculatorTrigger, msg)) {
-            calculateExpression(msg)
             return CompletableFuture.completedFuture(Unit)
         }
 

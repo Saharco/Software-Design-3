@@ -77,7 +77,7 @@ class CourseBotTest {
 
         verify {
             listener.invoke("#channel@matan", any())
-            listener.invoke("#channel@Anna0", match { it.contents.toString().toInt() == 42 })
+            listener.invoke("#channel@Anna0", match { String(it.contents).toInt() == 42 })
         }
     }
 
