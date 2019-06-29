@@ -152,38 +152,28 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             mostActiveUser[channel]
         }
     }
-//
-//    private fun getKthTopUserCounter(list: ArrayList<String>, k: Int = 0): Pair<Long, String>? {
-//        if (k >= list.size)
-//            return null
-//        val compareCounterEntries = Comparator<String> { entry1, entry2 ->
-//            val count1 = entry1.substringBefore('/').toInt()
-//            val count2 = entry2.substringBefore('/').toInt()
-//            count1 - count2
-//        }
-//
-//        val listCopy = ArrayList(list)
-//        listCopy.sortWith(compareCounterEntries)
-//        return parseChannelCounterEntry(listCopy[listCopy.size - (k + 1)])
-//    }
 
     override fun richestUser(channel: String): CompletableFuture<String?> {
         return CompletableFuture.supplyAsync {
             if (!channelsList.contains(channel))
                 throw NoSuchEntityException()
-            val channelLedger = ledgerMap[channel]!! //FIXME: null pointer exception here!!!
-            var max = 1000L // TODO: check this
-            var richestUser: String? = null
-            for ((user, money) in channelLedger) {
-                if (money > max) {
-                    max = money
-                    richestUser = user
+            val channelLedger = ledgerMap[channel]
+            if (channelLedger == null)
+                null
+            else {
+                var max = 1000L // TODO: check this
+                var richestUser: String? = null
+                for ((user, money) in channelLedger) {
+                    if (money > max) {
+                        max = money
+                        richestUser = user
+                    }
+                    else if (money == max) {
+                        richestUser = null
+                    }
                 }
-                if (money == max) {
-                    richestUser = null
-                }
+                richestUser
             }
-            richestUser
         }
     }
 
@@ -295,11 +285,12 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 Unit
             else {
                 val channelLedgerMap: MutableMap<String, Long>
-                if (ledgerMap[source] == null) {
+                val channelName = extractChannelName(source)!!
+                if (ledgerMap[channelName] == null) {
                     channelLedgerMap = mutableMapOf()
-                    ledgerMap[source] = channelLedgerMap
+                    ledgerMap[channelName] = channelLedgerMap
                 } else
-                    channelLedgerMap = ledgerMap[source]!!
+                    channelLedgerMap = ledgerMap[channelName]!!
 
                 val contentSuffix = msg.contents.toString(charset).substringAfter("${tippingTrigger!!} ")
                 val amount = contentSuffix.substringBefore(' ').toLong()
@@ -318,7 +309,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 
                 channelLedgerMap[extractSenderUsername(source)] = senderBalance
                 channelLedgerMap[receiverName] = receiverBalance
-                ledgerMap[source] = channelLedgerMap
+                ledgerMap[channelName] = channelLedgerMap
             }
         }
     }
