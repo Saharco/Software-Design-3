@@ -1,6 +1,6 @@
 package fakes.messages
 
-import fakes.library.utils.ObjectSerializer
+import il.ac.technion.cs.softwaredesign.ObjectSerializer
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import java.io.Serializable
