@@ -37,7 +37,7 @@ fun <T> Map<String, Any>.toDataClass(clazz: Class<T>): T {
  */
 class DocumentDataAccessLayer(private val defaultStorage: CompletableFuture<SecureStorage>) : DataAccessLayer<String, Map<String, Any>> {
 
-    private val objectCache: MutableMap<String, ByteArray> = HashMap()
+    private val objectCache = LimitedCacheMap<String, ByteArray>()
 
     private fun exists(id: String): CompletableFuture<Boolean> {
         return defaultStorage.thenCompose { storage ->
