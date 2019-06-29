@@ -84,6 +84,13 @@ class KeywordsTracker {
         incrementRegexCounters(globalTrackers, messageContent)
     }
 
+    fun remove(channelName: String) {
+        for (media in MediaType.values())
+            // remove channel-media tracker entry for all possible media types
+            channelMediaTrackerMap.remove(Pair(channelName, media))
+        channelTrackerMap.remove(channelName)
+    }
+
     private fun incrementRegexCounters(regexCounters: ArrayList<Pair<Regex, Long>>?, messageContent: String)
             : ArrayList<Pair<Regex, Long>> {
         regexCounters ?: return ArrayList()

@@ -23,18 +23,23 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private var calculatorTrigger: String? = null
     private var tippingTrigger: String? = null
 
-    private val ledgerMap = mutableMapOf<String, MutableMap<String, Long>>()
-
     private val keywordsTracker = KeywordsTracker()
 
+    // Map: channel -> (username, count)
+    private val ledgerMap = mutableMapOf<String, MutableMap<String, Long>>()
+    // Map: username -> date
     private val userLastMessageMap = mutableMapOf<String, LocalDateTime?>()
-    // Map of this format: channel -> ${counter}+'/'+${username}
+    // Map: channel -> Lists(${counter}+'/'+${username})
     private val userMessageCounterMap = mutableMapOf<String, ArrayList<String>>()
-    private var mostActiveUser: MutableMap<String, String?> = mutableMapOf()
-    private var mostActiveUserMessageCount: MutableMap<String, Long?> = mutableMapOf()
+    // Map: channel -> username?
+    private var channelMostActiveUserMap: MutableMap<String, String?> = mutableMapOf()
+    // Map: channel -> count?
+    private var channelMostActiveUserMessageCountMap: MutableMap<String, Long?> = mutableMapOf()
+    // Map: channel -> List(answer, counter)
+    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
+    // Map: userName -> (id -> answer)
+    private val surveyVotersMap = mutableMapOf<String, MutableMap<String, String>>()
 
-    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>() // channel -> List(answer, counter)
-    private val surveyVoters = mutableMapOf<String, MutableMap<String, String>>() // userName -> Map(id -> answer)
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
             app.addListener(token, ::messageCounterCallback)
@@ -56,7 +61,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             return CompletableFuture.completedFuture(Unit)
         return app.channelJoin(token, channelName).thenApply {
             channelsList.add(channelName)
-            //TODO: add the channel to all data structures
             Unit
         }
     }
@@ -64,10 +68,12 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     override fun part(channelName: String): CompletableFuture<Unit> {
         return app.channelPart(token, channelName).thenApply {
             channelsList.remove(channelName)
-            userLastMessageMap.remove(channelName)
+            //TODO: remove the channel from survey maps!
+            ledgerMap.remove(channelName)
             userMessageCounterMap.remove(channelName)
-            //TODO: remove the channel from all data structures
-            Unit
+            channelMostActiveUserMap.remove(channelName)
+            channelMostActiveUserMessageCountMap.remove(channelName)
+            keywordsTracker.remove(channelName)
         }
     }
 
@@ -107,7 +113,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.supplyAsync {
             if (!channelsList.contains(channel))
                 throw NoSuchEntityException()
-            mostActiveUser[channel]
+            channelMostActiveUserMap[channel]
         }
     }
 
@@ -119,7 +125,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             if (channelLedger == null)
                 null
             else {
-                var max = 1000L // TODO: check this
+                var max = 1000L
                 var richestUser: String? = null
                 for ((user, money) in channelLedger) {
                     if (money > max) {
@@ -265,7 +271,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 val channelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
-                val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
+                val voterList: MutableMap<String, String> = surveyVotersMap[userName] ?: mutableMapOf() // dont forget
                 for ((id, surveyListOfAnswers) in surveyMap) {
                     //remove first answer of the user if he answered this survey
                     if (voterList.containsKey(id)) {
@@ -289,7 +295,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         }
                     }
                 }
-                surveyVoters[userName] = voterList
+                surveyVotersMap[userName] = voterList
             }
         }
     }
@@ -327,10 +333,10 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     private fun tryUpdateMostActiveUser(channel: String, count: Long, otherUser: String) {
-        val currentMostActiveCount = mostActiveUserMessageCount[channel]
+        val currentMostActiveCount = channelMostActiveUserMessageCountMap[channel]
         if (currentMostActiveCount == null || count > currentMostActiveCount) {
-            mostActiveUser[channel] = otherUser
-            mostActiveUserMessageCount[channel] = count
+            channelMostActiveUserMap[channel] = otherUser
+            channelMostActiveUserMessageCountMap[channel] = count
         }
     }
 

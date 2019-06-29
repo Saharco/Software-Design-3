@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Duration.ofSeconds
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 import java.util.concurrent.CompletableFuture
 
 class CourseBotTest {
