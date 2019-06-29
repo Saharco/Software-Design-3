@@ -167,7 +167,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 val currentSeenTime = userLastMessageMap[source]
                 val newSeenTime = msg.created
                 if (currentSeenTime == null || currentSeenTime.isBefore(newSeenTime)) {
-                    userLastMessageMap[source] = newSeenTime
+                    userLastMessageMap[extractSenderUsername(source)] = newSeenTime
                 }
             }
         }

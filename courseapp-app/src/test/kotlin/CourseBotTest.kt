@@ -11,11 +11,12 @@ import il.ac.technion.cs.softwaredesign.messages.MessageFactory
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Duration.ofSeconds
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.CompletableFuture
 
 class CourseBotTest {
@@ -191,6 +192,49 @@ class CourseBotTest {
          *  Victor: 1050 <-
          */
         assertNull(bot.richestUser(channel).join())
+    }
+
+    @Test
+    fun `Asking the bot when a user who has not sent any messages was last seen should return null`() {
+        courseApp.login("admin", "admin").join()
+
+        val bot = bots.bot().join()
+
+        assertNull(bot.seenTime("admin").join())
+    }
+
+
+    @Test
+    fun `Bot accurately tracks a user's last activity across all channels`() {
+        val time1 = LocalDateTime.now()
+        Thread.sleep(200)
+
+        val adminToken = courseApp.login("sahar", "a very strong password").join()
+        courseApp.channelJoin(adminToken, "#TakeCare").thenCompose {
+            courseApp.channelJoin(adminToken, "#TakeCare2")
+        }.join()
+        val bot = bots.bot().thenCompose { bot ->
+            bot.join("#TakeCare").thenApply { bot }
+        }.thenCompose { bot ->
+            bot.join("#TakeCare2").thenApply { bot }
+        }.join()
+
+        courseApp.channelSend(adminToken, "#TakeCare", messageFactory.create(
+                MediaType.TEXT, "first message".toByteArray()).join()).join()
+
+        val time2 = bot.seenTime("sahar").join()!!
+
+        var diff = time1.until(time2, ChronoUnit.MILLIS)
+        assertTrue(diff > 200)
+        Thread.sleep(200)
+
+        courseApp.channelSend(adminToken, "#TakeCare2", messageFactory.create(
+                MediaType.TEXT, "second message".toByteArray()).join())
+
+        val time3 = bot.seenTime("sahar").join()!!
+
+        diff = time2.until(time3, ChronoUnit.MILLIS)
+        assertTrue(diff > 200)
     }
 
     @Test
