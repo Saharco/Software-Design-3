@@ -38,7 +38,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     // Map: channel -> List(answer, counter)
     private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
     // Map: userName -> (id -> answer)
-    private val surveyVotes = mutableMapOf<String, MutableMap<String, String>>()
+    private val surveyVoters = mutableMapOf<String, MutableMap<String, String>>()
 
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
@@ -268,10 +268,10 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.supplyAsync {
             if (isChannelMessage(source)
                     && msg.media == MediaType.TEXT) {
-                val channelName = extractChannelName(source)!!
+                val messageChannelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
-                val voterList: MutableMap<String, String> = surveyVotes[userName] ?: mutableMapOf() // dont forget
+                val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
                 for ((id, surveyListOfAnswers) in surveyMap) {
                     //remove first answer of the user if he answered this survey
                     if (voterList.containsKey(id)) {
@@ -285,7 +285,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         }
                     }
                     //add the user answer
-                    if (id.startsWith(channelName)) {
+                    if (id.startsWith(messageChannelName)) {
                         for ((i, pair) in surveyListOfAnswers.withIndex()) {
                             val answer = pair.first
                             val counter = pair.second
@@ -295,7 +295,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         }
                     }
                 }
-                surveyVotes[userName] = voterList
+                surveyVoters[userName] = voterList
             }
         }
     }
