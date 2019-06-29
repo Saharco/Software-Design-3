@@ -33,7 +33,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private var mostActiveUser: MutableMap<String, String?> = mutableMapOf()
     private var mostActiveUserMessageCount: MutableMap<String, Long?> = mutableMapOf()
 
-    private val surveyMap = mutableMapOf<String, ArrayList<Pair<String, Long>>>()
+    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
 
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
@@ -44,6 +44,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             app.addListener(token, ::calculatorCallback)
         }.thenCompose {
             app.addListener(token, ::tippingCallback)
+        }.thenCompose {
+            app.addListener(token, ::surveyCallback)
         }.join()
     }
 
@@ -133,20 +135,21 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     override fun runSurvey(channel: String, question: String, answers: List<String>): CompletableFuture<String> {
-        return CompletableFuture.supplyAsync {
+        return msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenApply { message ->
             if (!channelsList.contains(channel))
                 throw NoSuchEntityException()
-            val identifier = generateSurveyIdentifier()
+            val identifier = generateSurveyIdentifier(channel)
             val newSurveyList = ArrayList<Pair<String, Long>>()
             for (answer in answers) {
                 newSurveyList.add(Pair(answer, 0L))
             }
             surveyMap[identifier] = newSurveyList
+            app.channelSend(token, channel, message)
             identifier
         }
     }
 
-    private fun generateSurveyIdentifier() = "$name${LocalDateTime.now()}"
+    private fun generateSurveyIdentifier(channel: String) = "$channel/$name/${LocalDateTime.now()}"
 
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
         return CompletableFuture.supplyAsync {
@@ -251,6 +254,25 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 channelLedgerMap[extractSenderUsername(source)] = senderBalance
                 channelLedgerMap[receiverName] = receiverBalance
                 ledgerMap[channelName] = channelLedgerMap
+            }
+        }
+    }
+
+    private fun surveyCallback(source: String, msg: Message): CompletableFuture<Unit> {
+        return CompletableFuture.supplyAsync {
+            if (isChannelMessage(source)
+                    && msg.media == MediaType.TEXT) {
+                val channelName = extractChannelName(source)!!
+                for ((id, surveyListOfAnswers) in surveyMap) {
+                    if (id.startsWith(channelName)) {
+                        for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                            val answer = pair.first
+                            val counter = pair.second
+                            if (answer == msg.contents.toString(charset))
+                                surveyListOfAnswers[i] = Pair(answer, counter + 1)
+                        }
+                    }
+                }
             }
         }
     }
