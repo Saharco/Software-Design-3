@@ -33,8 +33,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private var mostActiveUser: MutableMap<String, String?> = mutableMapOf()
     private var mostActiveUserMessageCount: MutableMap<String, Long?> = mutableMapOf()
 
-    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>() // channel -> List(answer, counter)
-    private val surveyVoters = mutableMapOf<String, MutableMap<String, String>>() // userName -> Map(id -> answer)
+    private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>() // id -> List(answer, counter)
+    private val surveyVoters = mutableMapOf<String, MutableMap<String, String>>() // userName -> (id -> answer)
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
             app.addListener(token, ::messageCounterCallback)
@@ -262,7 +262,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.supplyAsync {
             if (isChannelMessage(source)
                     && msg.media == MediaType.TEXT) {
-                val channelName = extractChannelName(source)!!
+                val messageChannelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
                 val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
@@ -279,7 +279,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         }
                     }
                     //add the user answer
-                    if (id.startsWith(channelName)) {
+                    if (id.startsWith(messageChannelName)) {
                         for ((i, pair) in surveyListOfAnswers.withIndex()) {
                             val answer = pair.first
                             val counter = pair.second
