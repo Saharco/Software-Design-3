@@ -38,7 +38,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     // Map: channel -> List(answer, counter)
     private val surveyMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
     // Map: userName -> (id -> answer)
-    private val surveyVotersMap = mutableMapOf<String, MutableMap<String, String>>()
+    private val surveyVotes = mutableMapOf<String, MutableMap<String, String>>()
 
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
@@ -271,7 +271,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 val channelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
-                val voterList: MutableMap<String, String> = surveyVotersMap[userName] ?: mutableMapOf() // dont forget
+                val voterList: MutableMap<String, String> = surveyVotes[userName] ?: mutableMapOf() // dont forget
                 for ((id, surveyListOfAnswers) in surveyMap) {
                     //remove first answer of the user if he answered this survey
                     if (voterList.containsKey(id)) {
@@ -295,7 +295,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         }
                     }
                 }
-                surveyVotersMap[userName] = voterList
+                surveyVotes[userName] = voterList
             }
         }
     }
