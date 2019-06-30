@@ -299,11 +299,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 keywordsTracker.track(extractChannelName(source), msg.media, msg.contents.toString(charset)))
     }
 
-    private fun calculatorCallbackCreator(botName: String): CompletableFuture<ListenerCallback> {
-
-    }
-
-
     private fun calculatorCallback(source: String, msg: Message): CompletableFuture<Unit> {
         if (!isChannelMessage(source)
                 || msg.media != MediaType.TEXT

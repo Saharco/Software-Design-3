@@ -2,6 +2,8 @@ package il.ac.technion.cs.softwaredesign
 
 import com.google.inject.Inject
 import il.ac.technion.cs.softwaredesign.lib.db.Database
+import il.ac.technion.cs.softwaredesign.messages.MediaType
+import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
@@ -62,13 +64,26 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                     db.document("bots")
                             .find(botName, listOf("token"))
                             .execute()
+                            .thenApply { it != null }
+                            .thenCompose { botExists ->
+                                if (botExists)
+                                    loadExistingBot(botName)
+                                else
+                                    createNewBot(botName)
+                            }
+
+
+
+
                             .thenApply { Pair(botName, it != null) }
                 }.thenCompose { (botName, botExists) ->
                     if (botExists) {
-                        loadExistingBot(botName)
+                        loadExistingBot(botName).thenApply { Pair(botName, it) }
                     } else {
-                        createNewBot(botName)
+                        createNewBot(botName).thenApply { Pair(botName, it) }
                     }
+                }.thenCompose { (botName, bot) ->
+                    attachListeners(botName)
                 }
     }
 
@@ -78,7 +93,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 .execute()
                 .thenApply { it?.getAsString("token")!! }
                 .thenApply { token ->
-                    CourseBotImpl(app, msgFactory, botName, token)
+                    CourseBotImpl(app, db, msgFactory, botName, token)
                 }
     }
 
@@ -92,7 +107,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                     .execute()
                     .thenApply { token }
         }.thenApply { token ->
-            CourseBotImpl(app, msgFactory, botName, token)
+            CourseBotImpl(app, db, msgFactory, botName, token)
         }
     }
 
@@ -112,6 +127,162 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
     override fun bots(channel: String?): CompletableFuture<List<String>> {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
+
+    private fun calculatorCallbackCreator(botName: String): ListenerCallback {
+        return object : ListenerCallback {
+            override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
+                if (!isChannelMessage(source)
+                        || msg.media != MediaType.TEXT
+                        || !messageStartsWithTrigger(calculatorTrigger, msg)) {
+                    return CompletableFuture.completedFuture(Unit)
+                }
+
+                val calculationResult = calculateExpression(msg) ?: return CompletableFuture.completedFuture(Unit)
+
+                return msgFactory.create(MediaType.TEXT, calculationResult.toString().toByteArray()).thenCompose { message ->
+                    app.channelSend(token, extractChannelName(source)!!, message)
+                }
+            }
+        }
+    }
+
+    private fun keywordTrackingCallbackCreator(botName: String): ListenerCallback {
+        return object : ListenerCallback {
+            override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
+                return CompletableFuture.completedFuture(
+                        keywordsTracker.track(extractChannelName(source), msg.media, msg.contents.toString(CourseBotImpl.charset)))
+            }
+        }
+    }
+
+    private fun messageCounterCallbackCreator(botName: String): ListenerCallback {
+        return object : ListenerCallback {
+            override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
+                return CompletableFuture.supplyAsync {
+                    if (!isChannelMessage(source))
+                        Unit
+                    else {
+                        val channelName = extractChannelName(source)!!
+                        val userName = extractSenderUsername(source)
+                        val channelCounterList = userMessageCounterMap[channelName] ?: ArrayList()
+                        incrementChannelCounterList(channelName, channelCounterList, userName)
+                        userMessageCounterMap[channelName] = channelCounterList
+                    }
+                }
+            }
+        }
+    }
+
+    private fun lastMessageCallbackCreator(botName: String): ListenerCallback {
+        return object : ListenerCallback {
+            override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
+                return CompletableFuture.supplyAsync {
+                    if (!isChannelMessage(source))
+                        Unit
+                    else {
+                        val currentSeenTime = userLastMessageMap[source]
+                        val newSeenTime = msg.created
+                        if (currentSeenTime == null || currentSeenTime.isBefore(newSeenTime)) {
+                            userLastMessageMap[extractSenderUsername(source)] = newSeenTime
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun tippingCallbackCreator(botName: String): ListenerCallback {
+        return object : ListenerCallback {
+            override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
+                return CompletableFuture.supplyAsync {
+                    if (isChannelMessage(source)
+                            && msg.media == MediaType.TEXT
+                            && messageStartsWithTrigger(tippingTrigger, msg))
+                        msg.contents.toString(CourseBotImpl.charset).substringAfter("${tippingTrigger!!} ")
+                    else
+                        null
+                }.thenCompose { msgSuffix ->
+                    if (msgSuffix == null)
+                        CompletableFuture.completedFuture(false)
+                    else {
+                        val receiver = msgSuffix.substringAfter(' ')
+                        app.isUserInChannel(token, extractChannelName(source)!!, receiver)
+                    }
+                }.thenApply { isMember ->
+                    if (!isMember)
+                        Unit
+                    else {
+                        val channelLedgerMap: MutableMap<String, Long>
+                        val channelName = extractChannelName(source)!!
+                        if (ledgerMap[channelName] == null) {
+                            channelLedgerMap = mutableMapOf()
+                            ledgerMap[channelName] = channelLedgerMap
+                        } else
+                            channelLedgerMap = ledgerMap[channelName]!!
+
+                        val contentSuffix = msg.contents.toString(CourseBotImpl.charset).substringAfter("${tippingTrigger!!} ")
+                        val amount = contentSuffix.substringBefore(' ').toLong()
+                        val receiverName = contentSuffix.substringAfter(' ')
+                        var senderBalance = channelLedgerMap[extractSenderUsername(source)]
+                        var receiverBalance = channelLedgerMap[receiverName]
+
+                        if (senderBalance == null)
+                            senderBalance = 1000L
+
+                        if (receiverBalance == null)
+                            receiverBalance = 1000L
+
+                        senderBalance -= amount
+                        receiverBalance += amount
+
+                        channelLedgerMap[extractSenderUsername(source)] = senderBalance
+                        channelLedgerMap[receiverName] = receiverBalance
+                        ledgerMap[channelName] = channelLedgerMap
+                    }
+                }
+            }
+        }
+    }
+
+    private fun surveyCallback(botName: String): ListenerCallback {
+        return object : ListenerCallback {
+            override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
+                return CompletableFuture.supplyAsync {
+                    if (isChannelMessage(source)
+                            && msg.media == MediaType.TEXT) {
+                        val messageChannelName = extractChannelName(source)!!
+                        val userName = extractSenderUsername(source)
+
+                        val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
+                        for ((id, surveyListOfAnswers) in surveyMap) {
+                            //remove first answer of the user if he answered this survey
+                            if (voterList.containsKey(id)) {
+                                for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                                    val answer = pair.first
+                                    val counter = pair.second
+                                    if (answer == voterList[id]) {
+                                        surveyListOfAnswers[i] = Pair(answer, counter - 1)
+                                        voterList.remove(id)
+                                    }
+                                }
+                            }
+                            //add the user answer
+                            if (id.startsWith(messageChannelName)) {
+                                for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                                    val answer = pair.first
+                                    val counter = pair.second
+                                    if (answer == msg.contents.toString(CourseBotImpl.charset))
+                                        surveyListOfAnswers[i] = Pair(answer, counter + 1)
+                                    voterList[id] = answer
+                                }
+                            }
+                        }
+                        surveyVoters[userName] = voterList
+                    }
+                }
+            }
+        }
     }
 
     private fun parseChannelCounterEntry(entry: String): Pair<Long, String> {

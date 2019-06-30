@@ -1,9 +1,10 @@
 package il.ac.technion.cs.softwaredesign.wrappers
 
 import il.ac.technion.cs.softwaredesign.messages.MediaType
+import java.io.Serializable
 import java.lang.IllegalArgumentException
 
-class KeywordsTracker {
+class KeywordsTracker : Serializable {
 
     companion object {
         private val wildcardRegex = Regex("(?s).*")
