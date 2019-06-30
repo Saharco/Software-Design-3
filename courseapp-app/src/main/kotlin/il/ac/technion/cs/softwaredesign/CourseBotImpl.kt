@@ -130,6 +130,25 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }.thenCompose {
             it.remove(channelName)
             writeToDocument(KEY_KEYWORDS_TRACKER, it)
+        }.thenCompose {
+            db.document("metadata")
+                    .find(channelName, listOf("bots"))
+                    .execute()
+                    .thenApply {
+                        val botsList = it?.getAsList("bots") ?: mutableListOf()
+                        botsList.remove(name)
+                        botsList
+                    }
+        }.thenCompose { list ->
+            if (list != null) {
+                db.document("metadata")
+                        .update(channelName)
+                        .set("bots" to list)
+                        .execute()
+                        .thenApply { Unit }
+            } else {
+                CompletableFuture.completedFuture(Unit)
+            }
         }
     }
 
@@ -279,6 +298,11 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         return CompletableFuture.completedFuture(
                 keywordsTracker.track(extractChannelName(source), msg.media, msg.contents.toString(charset)))
     }
+
+    private fun calculatorCallbackCreator(botName: String): CompletableFuture<ListenerCallback> {
+
+    }
+
 
     private fun calculatorCallback(source: String, msg: Message): CompletableFuture<Unit> {
         if (!isChannelMessage(source)
