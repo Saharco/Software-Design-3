@@ -1,4 +1,4 @@
-package il.ac.technion.cs.softwaredesign
+package il.ac.technion.cs.softwaredesign.utils
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
