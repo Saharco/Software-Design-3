@@ -6,15 +6,45 @@ import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
-import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
 import kotlin.collections.ArrayList
 import il.ac.technion.cs.softwaredesign.lib.db.Database
+import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
+
 class CourseBotImpl @Inject constructor(private val app: CourseApp, private val db: Database, private val msgFactory: MessageFactory,
                                         private val name: String, private val token: String) : CourseBot {
 
+    companion object {
+        private val charset = Charsets.UTF_8
+        private val calculatorEngine = ScriptEngineManager().getEngineByName("JavaScript")
+
+        // List(channel)
+        private val KEY_LIST_CHANNELS = "channelsList"
+
+        // String?
+        private val KEY_TRIGGER_CALCULATOR = "calculatorTrigger"
+        // String?
+        private val KEY_TRIGGER_TIPPING = "tippingTrigger"
+
+        // Map: channel -> (username, count)
+        private val KEY_MAP_LEDGER = "ledgerMap"
+        // Map: channel -> (username, count)
+        private val KEY_MAP_USER_LAST_MESSAGE = "userLastMessageMap"
+        // Map: channel -> List(${counter}+'/'+${username})
+        private val KEY_MAP_USER_MESSAGE_COUNTER = "userMessageCounterMap"
+        // Map: channel -> username?
+        private val KEY_MAP_CHANNEL_MOST_ACTIVE_USER = "mostActiveUser"
+        // Map: channel -> count?
+        private val KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER = "channelMostActiveUserMessageCountMap"
+        // Map: channel -> List(answer, counter)
+        private val KEY_MAP_SURVERY = "surveyMap"
+        // Map: userName -> (id -> answer)
+        private val KEY_MAP_SURVEY_VOTERS = "surveyVotersMap"
+
+        private val KEY_KEYWORDS_TRACKER = "keywordsTracker"
+    }
 
     init {
         app.addListener(token, ::lastMessageCallback).thenCompose {
@@ -33,30 +63,76 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     override fun join(channelName: String): CompletableFuture<Unit> {
         if (!validChannelName(channelName))
             return CompletableFuture.supplyAsync { throw UserNotAuthorizedException() }
-        if (channelsList.contains(channelName))
-            return CompletableFuture.completedFuture(Unit)
         return app.channelJoin(token, channelName).thenCompose {
-            db.document("bots").find(name, listOf("channelsList")).execute()
-        }.thenApply { result ->
-
-        }
-                thenApply { channelsList ->
-            channelsList.add(channelName)
-            Unit
+            db.document("bots")
+                    .find(name, listOf("channelsList"))
+                    .execute()
+        }.thenCompose {
+            val channelsList = it?.getAsList("channelsList") ?: mutableListOf()
+            if (channelsList.contains(channelName))
+                CompletableFuture.completedFuture(false)
+            else {
+                channelsList.add(channelName)
+                db.document("bots")
+                        .update(name)
+                        .set("channelsList" to channelsList)
+                        .execute()
+                        .thenApply { true }
+            }
+        }.thenCompose { isAdded ->
+            if (isAdded) {
+                db.document("metadata")
+                        .find(channelName, listOf("bots"))
+                        .execute()
+                        .thenApply {
+                            val botsList = it?.getAsList("bots") ?: mutableListOf()
+                            botsList.add(name)
+                            botsList
+                        }
+            } else {
+                CompletableFuture.completedFuture(null as MutableList<String>?)
+            }
+        }.thenCompose { list ->
+            if (list != null) {
+                db.document("metadata")
+                        .update(channelName)
+                        .set("bots" to list)
+                        .execute()
+                        .thenApply { Unit }
+            } else {
+                CompletableFuture.completedFuture(Unit)
+            }
         }
     }
 
+    //            channelsList.remove(channelName)
+//            //TODO: remove the channel from survey maps!
+//            ledgerMap.remove(channelName)
+//            userMessageCounterMap.remove(channelName)
+//            channelMostActiveUserMap.remove(channelName)
+//            channelMostActiveUserMessageCountMap.remove(channelName)
+//            keywordsTracker.remove(channelName)
     override fun part(channelName: String): CompletableFuture<Unit> {
-        return app.channelPart(token, channelName).thenApply {
-            channelsList.remove(channelName)
-            //TODO: remove the channel from survey maps!
-            ledgerMap.remove(channelName)
-            userMessageCounterMap.remove(channelName)
-            channelMostActiveUserMap.remove(channelName)
-            channelMostActiveUserMessageCountMap.remove(channelName)
-            keywordsTracker.remove(channelName)
+        return app.channelPart(token, channelName).thenCompose {
+            removeFromList<String>(KEY_LIST_CHANNELS, channelName)
+        }.thenCompose {
+            removeFromMap<String, ArrayList<String>>(KEY_MAP_LEDGER, channelName)
+        }.thenCompose {
+            removeFromMap<String, ArrayList<String>>(KEY_MAP_USER_MESSAGE_COUNTER, channelName)
+        }.thenCompose {
+            removeFromMap<String, String?>(KEY_MAP_CHANNEL_MOST_ACTIVE_USER, channelName)
+        }.thenCompose {
+            removeFromMap<String, Long?>(KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER, channelName)
+        }.thenCompose {
+            readFromDocument<KeywordsTracker>(KEY_KEYWORDS_TRACKER)
+        }.thenApply {
+            it ?: KeywordsTracker()
+        }.thenCompose {
+            writeToDocument()
         }
     }
+
+
 
     override fun channels(): CompletableFuture<List<String>> {
         return CompletableFuture.completedFuture(channelsList)
@@ -362,5 +438,45 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         for (c in channel)
             if (!validCharPool.contains(c)) return false
         return true
+    }
+
+    private fun fetchFromDocument(key: String): CompletableFuture<Any?> {
+        return db.document("bots")
+                .find(name, listOf(key))
+                .execute()
+                .thenApply { it?.get(key) }
+    }
+
+    private fun writeToDocument(key: String, value: Any): CompletableFuture<Unit> {
+        return db.document("bots")
+                .update(name)
+                .set(key to value)
+                .execute()
+                .thenApply { Unit }
+    }
+
+    private fun <T> readFromDocument(key: String): CompletableFuture<T?> {
+        return fetchFromDocument(key).thenApply {
+            it as T?
+        }
+    }
+
+    private fun <T> readListFromDocument(key: String): CompletableFuture<MutableList<T>> {
+        return readFromDocument<MutableList<T>>(key).thenApply {
+           it ?: mutableListOf()
+        }
+    }
+
+    private fun <K, V> readMapFromDocument(key: String): CompletableFuture<MutableMap<K, V>> {
+        return readFromDocument<MutableMap<K, V>>(key).thenApply {
+            it ?: mutableMapOf()
+        }
+    }
+    private fun <T> removeFromList(listName: String, value: T): T {
+        return readListFromDocument<T>(listName).thenApply {
+            it.remove(value)
+        }.thenApply {
+
+        }
     }
 }
