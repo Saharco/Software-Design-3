@@ -44,14 +44,14 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         private val KEY_KEYWORDS_TRACKER = "keywordsTracker"
     }
 
-    private val botsMap = mutableMapOf<String, CourseBot>()
-
     override fun prepare(): CompletableFuture<Unit> {
-        return CompletableFuture.completedFuture(Unit) //TODO: change this to store metadata
+        return CompletableFuture.completedFuture(Unit) //TODO: change this to store metadata if necessary
     }
 
     override fun start(): CompletableFuture<Unit> {
-        return CompletableFuture.completedFuture(Unit) //TODO: change this to load all of the bot's configuration details from storage
+        return getSystemBots().thenCompose {
+            startBots(it)
+        }
     }
 
     override fun bot(name: String?): CompletableFuture<CourseBot> {
@@ -70,36 +70,106 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                                     loadExistingBot(botName)
                                 else
                                     createNewBot(botName)
+                            }.thenCompose { bot ->
+                                getBotToken(botName).thenCompose { token ->
+                                    attachListeners(botName, token)
+                                }.thenApply { bot }
                             }
-
-
-
-
-                            .thenApply { Pair(botName, it != null) }
-                }.thenCompose { (botName, botExists) ->
-                    if (botExists) {
-                        loadExistingBot(botName).thenApply { Pair(botName, it) }
-                    } else {
-                        createNewBot(botName).thenApply { Pair(botName, it) }
-                    }
-                }.thenCompose { (botName, bot) ->
-                    attachListeners(botName)
                 }
     }
 
-    private fun loadExistingBot(botName: String): CompletableFuture<CourseBot> {
+    override fun bots(channel: String?): CompletableFuture<List<String>> {
+        if (channel == null)
+            return getSystemBots()
+        return db.document("metadata")
+                .find(channel, listOf("bots"))
+                .execute()
+                .thenApply { document ->
+                    if (document == null)
+                        ArrayList()
+                    else
+                        document.getAsList("bots")
+                }
+    }
+
+    private fun startBots(botNames: List<String>, index: Int = 0): CompletableFuture<Unit> {
+        if (index >= botNames.size)
+            return CompletableFuture.completedFuture(Unit)
+        return startBot(botNames[index]).thenCompose {
+            startBots(botNames, index + 1)
+        }
+    }
+
+    private fun startBot(botName: String): CompletableFuture<Unit> {
+        return getBotToken(botName).thenCompose { token ->
+            attachListeners(botName, token)
+        }
+    }
+
+    private fun getSystemBots(): CompletableFuture<List<String>> {
+        return db.document("metadata")
+                .find("metadata", listOf("all_bots"))
+                .execute()
+                .thenApply { document ->
+                    if (document == null)
+                        ArrayList()
+                    else
+                        document.getAsList("all_bots")
+                }
+    }
+
+    private fun attachListeners(botName: String, token: String): CompletableFuture<Unit> {
+        val callbacks = listOf(
+                lastMessageCallbackCreator(botName),
+                messageCounterCallbackCreator(botName),
+                keywordTrackingCallbackCreator(botName),
+                calculatorCallbackCreator(botName),
+                tippingCallbackCreator(botName),
+                surveyCallbackCreator(botName))
+
+        return removeListeners(callbacks, token).exceptionally {
+            // it's okay if an exception is thrown here
+        }.thenCompose {
+            addListeners(callbacks, token)
+        }
+    }
+
+    private fun addListeners(callbacks: List<ListenerCallback>, token: String, index: Int = 0)
+            : CompletableFuture<Unit> {
+        if (index >= callbacks.size)
+            return CompletableFuture.completedFuture(Unit)
+        return app.addListener(token, callbacks[index])
+                .thenCompose {
+                    removeListeners(callbacks, token, index + 1)
+                }
+    }
+
+    private fun removeListeners(callbacks: List<ListenerCallback>, token: String, index: Int = 0)
+            : CompletableFuture<Unit> {
+        if (index >= callbacks.size)
+            return CompletableFuture.completedFuture(Unit)
+        return app.removeListener(token, callbacks[index])
+                .thenCompose {
+                    removeListeners(callbacks, token, index + 1)
+                }
+    }
+
+    private fun getBotToken(botName: String): CompletableFuture<String> {
         return db.document("bots")
                 .find(botName, listOf("token"))
                 .execute()
                 .thenApply { it?.getAsString("token")!! }
-                .thenApply { token ->
-                    CourseBotImpl(app, db, msgFactory, botName, token)
-                }
+    }
+
+    private fun loadExistingBot(botName: String): CompletableFuture<CourseBot> {
+        return getBotToken(botName).thenApply { token ->
+            CourseBotImpl(app, db, msgFactory, botName, token)
+        }
     }
 
     private fun createNewBot(botName: String): CompletableFuture<CourseBot> {
-        return updateBotsMetadata().thenCompose {
-            app.login(botName, password)
+        return updateBotsMetadata(botName).thenCompose {
+            app.login("$password$botName", password)
         }.thenCompose { token ->
             db.document("bots")
                     .create(botName, mapOf(
@@ -111,7 +181,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         }
     }
 
-    private fun updateBotsMetadata(): CompletableFuture<Unit> {
+    private fun updateBotsMetadata(botName: String): CompletableFuture<Unit> {
         return db.document("metadata")
                 .find("metadata", listOf("bot_counter"))
                 .execute()
@@ -121,12 +191,21 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                             .update("metadata")
                             .set("bot_counter" to counter + 1)
                             .execute()
+                }.thenCompose {
+                    db.document("metadata")
+                            .find("metadata", listOf("all_bots"))
+                            .execute()
+                }.thenApply { document ->
+                    val botsList = document?.getAsList("all_bots") ?: ArrayList()
+                    botsList.add(botName)
+                    botsList
+                }.thenCompose { botsList ->
+                    db.document("metadata")
+                            .update("metadata")
+                            .set("all_bots" to botsList)
+                            .execute()
                             .thenApply { Unit }
                 }
-    }
-
-    override fun bots(channel: String?): CompletableFuture<List<String>> {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 
     private fun calculatorCallbackCreator(botName: String): ListenerCallback {
@@ -164,7 +243,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                         Unit
                     else {
                         val channelName = extractChannelName(source)!!
-                        val userName = extractSenderUsername(source)
+                        val userName = cx extractSenderUsername (source)
                         val channelCounterList = userMessageCounterMap[channelName] ?: ArrayList()
                         incrementChannelCounterList(channelName, channelCounterList, userName)
                         userMessageCounterMap[channelName] = channelCounterList
@@ -245,7 +324,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         }
     }
 
-    private fun surveyCallback(botName: String): ListenerCallback {
+    private fun surveyCallbackCreator(botName: String): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
                 return CompletableFuture.supplyAsync {
@@ -254,7 +333,8 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                         val messageChannelName = extractChannelName(source)!!
                         val userName = extractSenderUsername(source)
 
-                        val voterList: MutableMap<String, String> = surveyVoters[userName] ?: mutableMapOf() // dont forget
+                        val voterList: MutableMap<String, String> = surveyVoters[userName]
+                                ?: mutableMapOf() // dont forget
                         for ((id, surveyListOfAnswers) in surveyMap) {
                             //remove first answer of the user if he answered this survey
                             if (voterList.containsKey(id)) {
