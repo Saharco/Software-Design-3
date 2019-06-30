@@ -39,7 +39,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         // Map: channel -> count?
         private val KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER = "channelMostActiveUserMessageCountMap"
         // Map: channel -> List(answer, counter)
-        private val KEY_MAP_SURVERY = "surveyMap"
+        private val KEY_MAP_SURVEY = "surveyMap"
         // Map: userName -> (id -> answer)
         private val KEY_MAP_SURVEY_VOTERS = "surveyVotersMap"
 
@@ -114,7 +114,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 //            keywordsTracker.remove(channelName)
     override fun part(channelName: String): CompletableFuture<Unit> {
         return app.channelPart(token, channelName).thenCompose {
-            removeFromList<String>(KEY_LIST_CHANNELS, channelName)
+            removeFromList(KEY_LIST_CHANNELS, channelName)
         }.thenCompose {
             removeFromMap<String, ArrayList<String>>(KEY_MAP_LEDGER, channelName)
         }.thenCompose {
@@ -128,60 +128,77 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }.thenApply {
             it ?: KeywordsTracker()
         }.thenCompose {
-            writeToDocument()
+            it.remove(channelName)
+            writeToDocument(KEY_KEYWORDS_TRACKER, it)
         }
     }
 
 
-
     override fun channels(): CompletableFuture<List<String>> {
-        return CompletableFuture.completedFuture(channelsList)
+        return readListFromDocument<String>(KEY_LIST_CHANNELS).thenApply {
+            it as List<String>
+        }
     }
 
     override fun beginCount(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Unit> {
-        return CompletableFuture.supplyAsync { keywordsTracker[channel, mediaType] = regex }
+        return readFromDocument<KeywordsTracker>(KEY_KEYWORDS_TRACKER).thenApply {
+            it ?: KeywordsTracker()
+        }.thenCompose {
+            it[channel, mediaType] = regex
+            writeToDocument(KEY_KEYWORDS_TRACKER, it)
+        }
     }
 
     override fun count(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Long> {
-        return CompletableFuture.completedFuture(keywordsTracker[channel, mediaType, regex])
+        return readFromDocument<KeywordsTracker>(KEY_KEYWORDS_TRACKER).thenApply {
+            it ?: KeywordsTracker()
+        }.thenApply {
+            it[channel, mediaType, regex]
+        }
     }
 
     override fun setCalculationTrigger(trigger: String?): CompletableFuture<String?> {
-        return CompletableFuture.supplyAsync {
-            val prevTrigger = calculatorTrigger
-            calculatorTrigger = trigger
-            prevTrigger
+        return readFromDocument<String>(KEY_TRIGGER_CALCULATOR).thenCompose {
+            val prevTrigger = it
+            writeToDocument(KEY_TRIGGER_CALCULATOR, trigger).thenApply { prevTrigger }
         }
     }
 
     override fun setTipTrigger(trigger: String?): CompletableFuture<String?> {
-        return CompletableFuture.supplyAsync {
-            val prevTrigger = tippingTrigger
-            tippingTrigger = trigger
-            prevTrigger
+        return readFromDocument<String>(KEY_TRIGGER_TIPPING).thenCompose {
+            val prevTrigger = it
+            writeToDocument(KEY_TRIGGER_TIPPING, trigger).thenApply { prevTrigger }
         }
     }
 
     override fun seenTime(user: String): CompletableFuture<LocalDateTime?> {
-        return CompletableFuture.completedFuture(userLastMessageMap[user])
+        return readMapFromDocument<String, LocalDateTime>(KEY_MAP_USER_LAST_MESSAGE).thenApply {
+            it[user]
+        }
     }
 
     override fun mostActiveUser(channel: String): CompletableFuture<String?> {
-        return CompletableFuture.supplyAsync {
-            if (!channelsList.contains(channel))
+        return readListFromDocument<String>(KEY_LIST_CHANNELS).thenApply {
+            if (!it.contains(channel))
                 throw NoSuchEntityException()
-            channelMostActiveUserMap[channel]
+        }.thenCompose {
+            readMapFromDocument<String, String?>(KEY_MAP_CHANNEL_MOST_ACTIVE_USER).thenApply {
+                it[channel]
+            }
         }
     }
 
     override fun richestUser(channel: String): CompletableFuture<String?> {
-        return CompletableFuture.supplyAsync {
-            if (!channelsList.contains(channel))
+        return readListFromDocument<String>(KEY_LIST_CHANNELS).thenApply {
+            if (!it.contains(channel))
                 throw NoSuchEntityException()
+        }.thenCompose {
+            readMapFromDocument<String, MutableMap<String, Long>>(KEY_MAP_LEDGER)
+        }.thenApply { ledgerMap ->
             val channelLedger = ledgerMap[channel]
-            if (channelLedger == null)
+            if (channelLedger == null) {
                 null
-            else {
+            } else {
                 var max = 1000L
                 var richestUser: String? = null
                 for ((user, money) in channelLedger) {
@@ -198,26 +215,31 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     override fun runSurvey(channel: String, question: String, answers: List<String>): CompletableFuture<String> {
-        return msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenApply { message ->
-            if (!channelsList.contains(channel))
+        return readListFromDocument<String>(KEY_LIST_CHANNELS).thenCompose {
+            if (!it.contains(channel))
                 throw NoSuchEntityException()
-            val identifier = generateSurveyIdentifier(channel)
-            val newSurveyList = ArrayList<Pair<String, Long>>()
-            for (answer in answers) {
-                newSurveyList.add(Pair(answer, 0L))
+            msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenCompose { message ->
+                val identifier = generateSurveyIdentifier(channel)
+                val newSurveyList = mutableListOf<Pair<String, Long>>()
+                for (answer in answers)
+                    newSurveyList.add(Pair(answer, 0L))
+                readMapFromDocument<String, MutableList<Pair<String, Long>>>(KEY_MAP_SURVEY).thenApply {
+                    it[identifier] = newSurveyList
+                    it
+                }.thenApply {
+                    writeToDocument(KEY_MAP_SURVEY, it)
+                    identifier
+                }
             }
-            surveyMap[identifier] = newSurveyList
-            app.channelSend(token, channel, message)
-            identifier
         }
     }
 
     private fun generateSurveyIdentifier(channel: String) = "$channel/$name/${LocalDateTime.now()}"
 
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
-        return CompletableFuture.supplyAsync {
+        return readMapFromDocument<String, MutableList<Pair<String, Long>>>(KEY_MAP_SURVEY).thenApply { surveyMap ->
             val resultPairs = surveyMap[identifier] ?: throw NoSuchEntityException()
-            val countResultList = ArrayList<Long>()
+            val countResultList = mutableListOf<Long>()
             for ((_, count) in resultPairs) {
                 countResultList.add(count)
             }
@@ -447,10 +469,16 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 .thenApply { it?.get(key) }
     }
 
-    private fun writeToDocument(key: String, value: Any): CompletableFuture<Unit> {
+    private fun writeToDocument(key: String, value: Any?): CompletableFuture<Unit> {
+        if (value != null) {
+            return db.document("bots")
+                    .update(name)
+                    .set(key to value)
+                    .execute()
+                    .thenApply { Unit }
+        }
         return db.document("bots")
-                .update(name)
-                .set(key to value)
+                .delete(name, listOf(key))
                 .execute()
                 .thenApply { Unit }
     }
@@ -463,7 +491,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 
     private fun <T> readListFromDocument(key: String): CompletableFuture<MutableList<T>> {
         return readFromDocument<MutableList<T>>(key).thenApply {
-           it ?: mutableListOf()
+            it ?: mutableListOf()
         }
     }
 
@@ -472,11 +500,22 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             it ?: mutableMapOf()
         }
     }
-    private fun <T> removeFromList(listName: String, value: T): T {
+
+    private fun <T> removeFromList(listName: String, value: T): CompletableFuture<Unit> {
         return readListFromDocument<T>(listName).thenApply {
             it.remove(value)
-        }.thenApply {
+            it
+        }.thenCompose {
+            writeToDocument(listName, it)
+        }
+    }
 
+    private fun <K, V> removeFromMap(mapName: String, key: K): CompletableFuture<Unit> {
+        return readMapFromDocument<K, V>(mapName).thenApply {
+            it.remove(key)
+            it
+        }.thenCompose {
+            writeToDocument(mapName, it)
         }
     }
 }
