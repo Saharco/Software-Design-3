@@ -12,6 +12,7 @@ import javax.script.ScriptEngineManager
 import kotlin.collections.ArrayList
 import il.ac.technion.cs.softwaredesign.lib.db.Database
 import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
+import java.io.Serializable
 
 class CourseBotImpl @Inject constructor(private val app: CourseApp, private val db: Database, private val msgFactory: MessageFactory,
                                         private val name: String, private val token: String) : CourseBot {
@@ -212,7 +213,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             if (!it.contains(channel))
                 throw NoSuchEntityException()
         }.thenCompose {
-            readMapFromDocument<String, MutableMap<String, Long>>(KEY_MAP_LEDGER)
+            readMapFromDocument<String, HashMap<String, Long>>(KEY_MAP_LEDGER)
         }.thenApply { ledgerMap ->
             val channelLedger = ledgerMap[channel]
             if (channelLedger == null) {
@@ -267,15 +268,16 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     private fun lastMessageCallback(source: String, msg: Message): CompletableFuture<Unit> {
-        return CompletableFuture.supplyAsync {
-            if (!isChannelMessage(source))
-                Unit
-            else {
-                val currentSeenTime = userLastMessageMap[source]
-                val newSeenTime = msg.created
-                if (currentSeenTime == null || currentSeenTime.isBefore(newSeenTime)) {
-                    userLastMessageMap[extractSenderUsername(source)] = newSeenTime
-                }
+        if (!isChannelMessage(source))
+            return CompletableFuture.completedFuture(Unit)
+        return readMapFromDocument<String, LocalDateTime?>(KEY_MAP_USER_LAST_MESSAGE).thenCompose { userLastMessageMap ->
+            val currentSeenTime = userLastMessageMap[source]
+            val newSeenTime = msg.created
+            if (currentSeenTime == null || currentSeenTime.isBefore(newSeenTime)) {
+                userLastMessageMap[extractSenderUsername(source)] = newSeenTime
+                writeToDocument(KEY_MAP_USER_LAST_MESSAGE, userLastMessageMap)
+            } else {
+                CompletableFuture.completedFuture(Unit)
             }
         }
     }
@@ -332,10 +334,10 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             if (!isMember)
                 Unit
             else {
-                val channelLedgerMap: MutableMap<String, Long>
+                val channelLedgerMap: HashMap<String, Long>
                 val channelName = extractChannelName(source)!!
                 if (ledgerMap[channelName] == null) {
-                    channelLedgerMap = mutableMapOf()
+                    channelLedgerMap = hashMapOf()
                     ledgerMap[channelName] = channelLedgerMap
                 } else
                     channelLedgerMap = ledgerMap[channelName]!!
@@ -479,62 +481,5 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         for (c in channel)
             if (!validCharPool.contains(c)) return false
         return true
-    }
-
-    private fun fetchFromDocument(key: String): CompletableFuture<Any?> {
-        return db.document("bots")
-                .find(name, listOf(key))
-                .execute()
-                .thenApply { it?.get(key) }
-    }
-
-    private fun writeToDocument(key: String, value: Any?): CompletableFuture<Unit> {
-        if (value != null) {
-            return db.document("bots")
-                    .update(name)
-                    .set(key to value)
-                    .execute()
-                    .thenApply { Unit }
-        }
-        return db.document("bots")
-                .delete(name, listOf(key))
-                .execute()
-                .thenApply { Unit }
-    }
-
-    private fun <T> readFromDocument(key: String): CompletableFuture<T?> {
-        return fetchFromDocument(key).thenApply {
-            it as T?
-        }
-    }
-
-    private fun <T> readListFromDocument(key: String): CompletableFuture<MutableList<T>> {
-        return readFromDocument<MutableList<T>>(key).thenApply {
-            it ?: mutableListOf()
-        }
-    }
-
-    private fun <K, V> readMapFromDocument(key: String): CompletableFuture<MutableMap<K, V>> {
-        return readFromDocument<MutableMap<K, V>>(key).thenApply {
-            it ?: mutableMapOf()
-        }
-    }
-
-    private fun <T> removeFromList(listName: String, value: T): CompletableFuture<Unit> {
-        return readListFromDocument<T>(listName).thenApply {
-            it.remove(value)
-            it
-        }.thenCompose {
-            writeToDocument(listName, it)
-        }
-    }
-
-    private fun <K, V> removeFromMap(mapName: String, key: K): CompletableFuture<Unit> {
-        return readMapFromDocument<K, V>(mapName).thenApply {
-            it.remove(key)
-            it
-        }.thenCompose {
-            writeToDocument(mapName, it)
-        }
     }
 }
