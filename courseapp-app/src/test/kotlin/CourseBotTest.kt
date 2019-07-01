@@ -42,87 +42,8 @@ class CourseBotTest {
     }
 
     @Test
-    fun `checking if update works properly`() {
-//        db.document("Folder")
-//                .create("Doc", mapOf("a list" to ArrayList<String>()))
-//                .execute()
-//                .join()
-
-        db.document("Folder")
-                .find("Doc", listOf("a list"))
-                .execute()
-                .thenApply {
-                    val list = it?.getAsList("a list") ?: mutableListOf()
-                    list.add("Hello")
-                    list
-                }.thenCompose { list ->
-                    db.document("Folder")
-                            .create("Doc", mapOf("a list" to list))
-                            .execute()
-                }.join()
-
-        var list = db.document("Folder")
-                .find("Doc", listOf("a list"))
-                .execute()
-                .thenApply { document ->
-                    if (document == null)
-                        ArrayList()
-                    else
-                        document.getAsList("a list")
-                }.join()
-
-        assertEquals(arrayListOf("Hello"), list)
-
-        db.document("Folder")
-                .find("Doc", listOf("a list"))
-                .execute()
-                .thenApply {
-                    val list = it?.getAsList("a list") ?: mutableListOf()
-                    list.add("Hi")
-                    list
-                }.thenCompose { list ->
-                    db.document("Folder")
-                            .create("Doc", mapOf("a list" to list))
-                            .execute()
-                }.join()
-
-        list = db.document("Folder")
-                .find("Doc", listOf("a list"))
-                .execute()
-                .thenApply { document ->
-                    if (document == null)
-                        ArrayList()
-                    else
-                        document.getAsList("a list")
-                }.join()
-
-        assertEquals(arrayListOf("Hello", "Hi"), list)
-
-        db.document("Folder")
-                .find("Doc", listOf("number"))
-                .execute()
-                .thenApply {
-                    it?.getInteger("number")?.plus(1) ?: 1
-                }.thenCompose { num ->
-                    db.document("Folder")
-                            .create("Doc", mapOf("number" to num))
-                            .execute()
-                }.join()
-
-        val (newList, num) = db.document("Folder")
-                .find("Doc", listOf("a list", "number"))
-                .execute()
-                .thenApply { document ->
-                    Pair(document?.getAsList("a list"), document?.getInteger("number"))
-                }.join()
-
-        assertEquals(list, newList)
-        assertEquals(1, num)
-    }
-
-    @Test
     fun `Can create a bot and make it join channels`() {
-        val token = courseApp.login("gal", "hunter2").join()
+        val token = courseApp.login("sahar", "a very strong password").join()
 
         assertThat(runWithTimeout(ofSeconds(10)) {
             val bot = courseApp.channelJoin(token, "#channel")
@@ -388,7 +309,7 @@ class CourseBotTest {
 
     @Test
     fun `Can list bots in a channel`() {
-        courseApp.login("gal", "hunter2")
+        courseApp.login("sahar", "a very strong password")
                 .thenCompose { adminToken ->
                     courseApp.channelJoin(adminToken, "#channel")
                             .thenCompose { bots.bot().thenCompose { it.join("#channel") } }
@@ -404,7 +325,7 @@ class CourseBotTest {
         val listener = mockk<ListenerCallback>()
         every { listener(any(), any()) }.returns(CompletableFuture.completedFuture(Unit))
 
-        courseApp.login("gal", "hunter2")
+        courseApp.login("sahar", "a very strong password")
                 .thenCompose { adminToken ->
                     courseApp.channelJoin(adminToken, "#channel")
                             .thenCompose {
@@ -413,21 +334,21 @@ class CourseBotTest {
                                             .thenApply { bot.setCalculationTrigger("calculate") }
                                 }
                             }
-                            .thenCompose { courseApp.login("matan", "s3kr3t") }
+                            .thenCompose { courseApp.login("yuval", "a very weak password") }
                             .thenCompose { token -> courseApp.channelJoin(token, "#channel").thenApply { token } }
                             .thenCompose { token -> courseApp.addListener(token, listener).thenApply { token } }
                             .thenCompose { token -> courseApp.channelSend(token, "#channel", messageFactory.create(MediaType.TEXT, "calculate 20 * 2 +2".toByteArray()).join()) }
                 }.join()
 
         verify {
-            listener.invoke("#channel@matan", any())
+            listener.invoke("#channel@yuval", any())
             listener.invoke("#channel@Anna0", match { String(it.contents).toInt() == 42 })
         }
     }
 
     @Test
     fun `A user in the channel can tip another user`() {
-        courseApp.login("gal", "hunter2")
+        courseApp.login("sahar", "a very strong password")
                 .thenCompose { adminToken ->
                     courseApp.channelJoin(adminToken, "#channel")
                             .thenCompose {
@@ -435,23 +356,23 @@ class CourseBotTest {
                                         .thenCompose { bot -> bot.join("#channel").thenApply { bot } }
                                         .thenCompose { bot -> bot.setTipTrigger("tip") }
                             }
-                            .thenCompose { courseApp.login("matan", "s3kr3t") }
+                            .thenCompose { courseApp.login("yuval", "a very weak password") }
                             .thenCompose { token -> courseApp.channelJoin(token, "#channel").thenApply { token } }
-                            .thenCompose { token -> courseApp.channelSend(token, "#channel", messageFactory.create(MediaType.TEXT, "tip 10 gal".toByteArray()).join()) }
+                            .thenCompose { token -> courseApp.channelSend(token, "#channel", messageFactory.create(MediaType.TEXT, "tip 10 sahar".toByteArray()).join()) }
                 }.join()
 
         assertThat(runWithTimeout(ofSeconds(10)) {
             bots.bot("Anna0")
                     .thenCompose { it.richestUser("#channel") }
                     .join()
-        }, present(equalTo("gal")))
+        }, present(equalTo("sahar")))
     }
 
     @Test
     fun `The bot accurately tracks keywords`() {
         val regex = ".*ello.*[wW]orl.*"
         val channel = "#channel"
-        courseApp.login("gal", "hunter2")
+        courseApp.login("sahar", "a very strong password")
                 .thenCompose { adminToken ->
                     courseApp.channelJoin(adminToken, channel)
                             .thenCompose {
@@ -459,7 +380,7 @@ class CourseBotTest {
                                         .thenCompose { bot -> bot.join(channel).thenApply { bot } }
                                         .thenCompose { bot -> bot.beginCount(regex = regex) }
                             }
-                            .thenCompose { courseApp.login("matan", "s3kr3t") }
+                            .thenCompose { courseApp.login("yuval", "a very weak password") }
                             .thenCompose { token -> courseApp.channelJoin(token, channel).thenApply { token } }
                             .thenCompose { token -> courseApp.channelSend(token, channel, messageFactory.create(MediaType.TEXT, "hello, world!".toByteArray()).join()) }
                 }.join()
@@ -471,10 +392,10 @@ class CourseBotTest {
 
     @Test
     fun `A user in the channel can ask the bot to do a survey`() {
-        val adminToken = courseApp.login("gal", "hunter2")
+        val adminToken = courseApp.login("sahar", "a very strong password")
                 .thenCompose { token -> courseApp.channelJoin(token, "#channel").thenApply { token } }
                 .join()
-        val regularUserToken = courseApp.login("matan", "s3kr3t")
+        val regularUserToken = courseApp.login("yuval", "a very weak password")
                 .thenCompose { token -> courseApp.channelJoin(token, "#channel").thenApply { token } }
                 .join()
         val bot = bots.bot()
@@ -493,33 +414,61 @@ class CourseBotTest {
     }
 
     @Test
+    fun `Bots' names are generated correctly and in order`() {
+        val adminToken = courseApp.login("sahar", "a very strong password").join()
+        val bots = bots.bot().thenCompose {
+            bots.bot()
+        }.thenCompose {
+            bots.bot("Yossi")
+        }.thenCompose {
+            bots.bot()
+        }.thenCompose {
+            bots.bots()
+        }.join()
+
+        assertEquals(listOf("Anna0", "Anna1", "Yossi", "Anna3"), bots)
+    }
+
+    @Test
+    fun `Setting tip trigger to null returns the previous tip trigger`() {
+        val previousTrigger = courseApp.login("sahar", "a very strong password").thenCompose {
+            bots.bot()
+        }.thenCompose { bot ->
+            bot.setTipTrigger("Hello")
+                    .thenApply { bot }
+        }.thenCompose { bot ->
+            bot.setTipTrigger(null)
+        }.join()
+
+        assertEquals(previousTrigger, "Hello")
+    }
+
+    @Test
+    fun `Setting calculation trigger to null returns the previous tip trigger`() {
+        val previousTrigger = courseApp.login("sahar", "a very strong password").thenCompose {
+            bots.bot()
+        }.thenCompose { bot ->
+            bot.setCalculationTrigger("Hello")
+                    .thenApply { bot }
+        }.thenCompose { bot ->
+            bot.setCalculationTrigger(null)
+        }.join()
+
+        assertEquals(previousTrigger, "Hello")
+    }
+
+    @Test
     fun `Bot's channel statistics are deleted upon leaving a channel`() {
         TODO("Need to write this test case")
     }
 
     @Test
-    fun `Two bots keep separate ledgers when tracking users in the same channel when trigger word is identical for both`() {
-        TODO("Need to write this test case")
-    }
-
-    @Test
-    fun `Setting tip trigger to null returns the previous tip trigger`() {
-        TODO("Need to write this test case")
-    }
-
-
-    @Test
-    fun `Setting calculation trigger to null returns the previous tip trigger`() {
+    fun `Two bots keep separate ledgers when tracking users in the same channel even if trigger word is identical for both`() {
         TODO("Need to write this test case")
     }
 
     @Test
     fun `Bots' callbacks operate only on text messages, except for counting messages`() {
-        TODO("Need to write this test case")
-    }
-
-    @Test
-    fun `Bots' names are generated correctly`() {
         TODO("Need to write this test case")
     }
 
