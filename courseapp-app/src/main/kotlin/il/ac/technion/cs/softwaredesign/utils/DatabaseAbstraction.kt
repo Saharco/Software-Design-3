@@ -7,7 +7,7 @@ import java.util.concurrent.CompletableFuture
 
 class DatabaseAbstraction(private val db: Database, private val document: String, private val id: String) {
 
-    fun writePrimitiveToDocument(key: String, value: Any?): CompletableFuture<Unit> {
+    fun writePrimitive(key: String, value: Any?): CompletableFuture<Unit> {
         if (value != null) {
             return db.document(document)
                     .create(id)
@@ -21,7 +21,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 .thenApply { Unit }
     }
 
-    fun <T : Serializable> writeSerializableToDocument(key: String, value: T?): CompletableFuture<Unit> {
+    fun <T : Serializable> writeSerializable(key: String, value: T?): CompletableFuture<Unit> {
         if (value != null) {
             return db.document(document)
                     .create(id)
@@ -35,65 +35,39 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 .thenApply { Unit }
     }
 
-    fun readStringFromDocument(key: String): CompletableFuture<String?> {
+    fun readString(key: String): CompletableFuture<String?> {
         return db.document(document)
                 .find(id, listOf(key))
                 .execute()
                 .thenApply { it?.getAsString(key) }
     }
 
-    fun <K, V> readMapFromDocument(key: String): CompletableFuture<HashMap<K, V>> {
+    fun <T : Serializable> readSerializable(key: String, ifAbsent: T): CompletableFuture<T> {
         return db.document(document)
                 .find(id, listOf(key))
                 .execute()
                 .thenApply { document ->
                     if (document?.getAsString(key) == null)
-                        hashMapOf()
+                        ifAbsent
                     else
-                        ObjectSerializer.deserialize<HashMap<K, V>>(document.getAsString(key)!!)
-                }
+                        ObjectSerializer.deserialize(document.getAsString(key)!!) }
     }
-
-    fun <T> readListFromDocument(key: String): CompletableFuture<ArrayList<T>> {
-        return db.document(document)
-                .find(id, listOf(key))
-                .execute()
-                .thenApply { document ->
-                    if (document?.getAsString(key) == null)
-                        arrayListOf()
-                    else
-                        ObjectSerializer.deserialize<ArrayList<T>>(document.getAsString(key)!!)
-                }
-    }
-
-    fun readKeywordsTrackerFromDocument(key: String): CompletableFuture<KeywordsTracker> {
-        return db.document(document)
-                .find(id, listOf(key))
-                .execute()
-                .thenApply { document ->
-                    if (document?.getAsString(key) == null)
-                        KeywordsTracker()
-                    else
-                        ObjectSerializer.deserialize(document.getAsString(key)!!)
-                }
-    }
-
 
     fun <T> removeFromList(listName: String, value: T): CompletableFuture<Unit> {
-        return readListFromDocument<T>(listName).thenApply {
+        return readSerializable(listName, ArrayList<T>()).thenApply {
             it.remove(value)
             it
         }.thenCompose {
-            writeSerializableToDocument(listName, it)
+            writeSerializable(listName, it)
         }
     }
 
     fun <K, V> removeFromMap(mapName: String, key: K): CompletableFuture<Unit> {
-        return readMapFromDocument<K, V>(mapName).thenApply {
+        return readSerializable(mapName, HashMap<K, V>()).thenApply {
             it.remove(key)
             it
         }.thenCompose {
-            writeSerializableToDocument(mapName, it)
+            writeSerializable(mapName, it)
         }
     }
 }

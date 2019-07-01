@@ -6,6 +6,7 @@ import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
 import il.ac.technion.cs.softwaredesign.utils.DatabaseAbstraction
+import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
@@ -222,7 +223,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun calculatorCallbackCreator(dbAbstraction: DatabaseAbstraction, token: String): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return dbAbstraction.readStringFromDocument(KEY_TRIGGER_CALCULATOR).thenCompose { trigger ->
+                return dbAbstraction.readString(KEY_TRIGGER_CALCULATOR).thenCompose { trigger ->
                     if (!isChannelMessage(source)
                             || msg.media != MediaType.TEXT
                             || !messageStartsWithTrigger(trigger, msg)) {
@@ -245,9 +246,9 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun keywordTrackingCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return dbAbstraction.readKeywordsTrackerFromDocument(KEY_KEYWORDS_TRACKER).thenCompose {
+                return dbAbstraction.readSerializable(KEY_KEYWORDS_TRACKER, KeywordsTracker()).thenCompose {
                     it.track(extractChannelName(source), msg.media, msg.contents.toString(charset))
-                    dbAbstraction.writeSerializableToDocument(KEY_KEYWORDS_TRACKER, it)
+                    dbAbstraction.writeSerializable(KEY_KEYWORDS_TRACKER, it)
                 }
             }
         }
@@ -262,12 +263,12 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 val channelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
-                return dbAbstraction.readMapFromDocument<String, ArrayList<String>>(KEY_MAP_USER_MESSAGE_COUNTER)
+                return dbAbstraction.readSerializable(KEY_MAP_USER_MESSAGE_COUNTER, HashMap<String, ArrayList<String>>())
                         .thenCompose { userMessageCounterMap ->
                             val channelCounterList = userMessageCounterMap[channelName] ?: ArrayList()
                             incrementChannelCounterList(dbAbstraction, channelName, channelCounterList, userName).thenCompose {
                                 userMessageCounterMap[channelName] = channelCounterList
-                                dbAbstraction.writeSerializableToDocument(KEY_MAP_USER_MESSAGE_COUNTER, userMessageCounterMap)
+                                dbAbstraction.writeSerializable(KEY_MAP_USER_MESSAGE_COUNTER, userMessageCounterMap)
                             }
                         }
             }
@@ -287,13 +288,13 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
                 if (!isChannelMessage(source))
                     return CompletableFuture.completedFuture(Unit)
-                return dbAbstraction.readMapFromDocument<String, LocalDateTime?>(KEY_MAP_USER_LAST_MESSAGE)
+                return dbAbstraction.readSerializable(KEY_MAP_USER_LAST_MESSAGE, HashMap<String, LocalDateTime?>())
                         .thenCompose { userLastMessageMap ->
                             val currentSeenTime = userLastMessageMap[source]
                             val newSeenTime = msg.created
                             if (currentSeenTime == null || currentSeenTime.isBefore(newSeenTime)) {
                                 userLastMessageMap[extractSenderUsername(source)] = newSeenTime
-                                dbAbstraction.writeSerializableToDocument(KEY_MAP_USER_LAST_MESSAGE, userLastMessageMap)
+                                dbAbstraction.writeSerializable(KEY_MAP_USER_LAST_MESSAGE, userLastMessageMap)
                             } else {
                                 CompletableFuture.completedFuture(Unit)
                             }
@@ -305,7 +306,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun tippingCallbackCreator(dbAbstraction: DatabaseAbstraction, token: String): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return dbAbstraction.readStringFromDocument(KEY_TRIGGER_TIPPING).thenCompose { trigger ->
+                return dbAbstraction.readString(KEY_TRIGGER_TIPPING).thenCompose { trigger ->
                     if (!isChannelMessage(source)
                             || msg.media != MediaType.TEXT
                             || !messageStartsWithTrigger(trigger, msg)) {
@@ -317,9 +318,9 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                                 if (isMember == null || !isMember) {
                                     CompletableFuture.completedFuture(Unit)
                                 } else {
-                                    dbAbstraction.readMapFromDocument<String, HashMap<String, Long>>(KEY_MAP_LEDGER).thenCompose { ledgerMap ->
+                                    dbAbstraction.readSerializable(KEY_MAP_LEDGER, HashMap<String, HashMap<String, Long>>()).thenCompose { ledgerMap ->
                                         performTipping(source, ledgerMap, msg, trigger)
-                                        dbAbstraction.writeSerializableToDocument(KEY_MAP_LEDGER, ledgerMap)
+                                        dbAbstraction.writeSerializable(KEY_MAP_LEDGER, ledgerMap)
                                     }
                                 }
                             }
