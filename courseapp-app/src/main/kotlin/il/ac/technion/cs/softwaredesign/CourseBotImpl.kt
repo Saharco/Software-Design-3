@@ -53,19 +53,13 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         if (!validChannelName(channelName))
             return CompletableFuture.supplyAsync { throw UserNotAuthorizedException() }
         return app.channelJoin(token, channelName).thenCompose {
-            db.document("bots")
-                    .find(name, listOf("channelsList"))
-                    .execute()
-        }.thenCompose {
-            val channelsList = it?.getAsList("channelsList") ?: mutableListOf()
+            dbAbstraction.readListFromDocument<String>(KEY_LIST_CHANNELS)
+        }.thenCompose { channelsList ->
             if (channelsList.contains(channelName))
                 CompletableFuture.completedFuture(false)
             else {
                 channelsList.add(channelName)
-                db.document("bots")
-                        .create(name)
-                        .set("channelsList" to channelsList)
-                        .execute()
+                dbAbstraction.writeSerializableToDocument(KEY_LIST_CHANNELS, channelsList)
                         .thenApply { true }
             }
         }.thenCompose { isAdded ->

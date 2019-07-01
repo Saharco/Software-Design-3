@@ -9,6 +9,7 @@ import il.ac.technion.cs.softwaredesign.utils.DatabaseAbstraction
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
+import javax.security.auth.callback.Callback
 
 class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory,
                                          private val db: Database)
@@ -122,19 +123,23 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
     private fun attachListeners(botName: String, token: String): CompletableFuture<Unit> {
         val dbBotAbstraction = DatabaseAbstraction(db, "bots", botName)
-        val callbacks = listOf(
-                lastMessageCallbackCreator(dbBotAbstraction), // Done
-                messageCounterCallbackCreator(dbBotAbstraction),
-                keywordTrackingCallbackCreator(dbBotAbstraction),
-                calculatorCallbackCreator(dbBotAbstraction),
-                tippingCallbackCreator(dbBotAbstraction),
-                surveyCallbackCreator(dbBotAbstraction))
-
+        val callbacks = createBotCallbacks(dbBotAbstraction, token)
         return removeListeners(callbacks, token).exceptionally {
         }.thenCompose {
             addListeners(callbacks, token)
         }
     }
+
+    private fun createBotCallbacks(dbAbstraction: DatabaseAbstraction, token: String): List<ListenerCallback> {
+        return listOf(
+                lastMessageCallbackCreator(dbAbstraction), // Done
+                calculatorCallbackCreator(dbAbstraction, token), // Done
+                keywordTrackingCallbackCreator(dbAbstraction), // Done
+                messageCounterCallbackCreator(dbAbstraction),
+                tippingCallbackCreator(dbAbstraction),
+                surveyCallbackCreator(dbAbstraction))
+    }
+
 
     private fun addListeners(callbacks: List<ListenerCallback>, token: String, index: Int = 0)
             : CompletableFuture<Unit> {
@@ -214,10 +219,25 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 }
     }
 
-    private fun calculatorCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
+    private fun calculatorCallbackCreator(dbAbstraction: DatabaseAbstraction, token: String): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return CompletableFuture.completedFuture(Unit) //TODO: add this callback
+                return dbAbstraction.readStringFromDocument(KEY_TRIGGER_CALCULATOR).thenCompose { trigger ->
+                    if (!isChannelMessage(source)
+                            || msg.media != MediaType.TEXT
+                            || !messageStartsWithTrigger(trigger, msg)) {
+                        CompletableFuture.completedFuture(Unit)
+                    } else {
+                        val calculationResult = calculateExpression(msg, trigger!!)
+                        if (calculationResult == null) {
+                            CompletableFuture.completedFuture(Unit)
+                        } else {
+                            msgFactory.create(MediaType.TEXT, calculationResult.toString().toByteArray()).thenCompose {
+                                app.channelSend(token, extractChannelName(source)!!, it)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -225,7 +245,9 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun keywordTrackingCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return CompletableFuture.completedFuture(Unit) //TODO: add this callback
+                return dbAbstraction.readKeywordsTrackerFromDocument(KEY_KEYWORDS_TRACKER).thenApply {
+                    it.track(extractChannelName(source), msg.media, msg.contents.toString(charset))
+                }
             }
         }
     }
@@ -233,9 +255,29 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun messageCounterCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return CompletableFuture.completedFuture(Unit) //TODO: add this callback
+                if (!isChannelMessage(source))
+                    return CompletableFuture.completedFuture(Unit)
+                val channelName = extractChannelName(source)!!
+                val userName = extractSenderUsername(source)
+
+                return dbAbstraction.readMapFromDocument<String, ArrayList<String>>(KEY_MAP_USER_MESSAGE_COUNTER)
+                        .thenCompose { userMessageCounterMap ->
+                            val channelCounterList = userMessageCounterMap[channelName] ?: ArrayList()
+                            incrementChannelCounterList(dbAbstraction, channelName, channelCounterList, userName).thenCompose {
+                                userMessageCounterMap[channelName] = channelCounterList
+                                dbAbstraction.writeSerializableToDocument(KEY_MAP_USER_MESSAGE_COUNTER, userMessageCounterMap)
+                            }
+                        }
             }
         }
+    }
+
+    private fun incrementChannelCounterList(dbAbstraction: DatabaseAbstraction, channelName: String,
+                                            channelCounterList: ArrayList<String>, userName: String)
+            : CompletableFuture<Unit> {
+        // channel -> List(${counter}+'/'+${username})
+        // TODO: implement this
+        return CompletableFuture.completedFuture(Unit)
     }
 
     private fun lastMessageCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
@@ -276,7 +318,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
     //FIXME: here be dragons and scary callbacks and helper methods. refactor these A'ols
 
-//
+    //
 //    private fun messageCounterCallback(source: String, msg: Message): CompletableFuture<Unit> {
 //        return CompletableFuture.supplyAsync {
 //            if (!isChannelMessage(source))
@@ -395,45 +437,47 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 //        }
 //    }
 //
-//    private fun messageStartsWithTrigger(trigger: String?, msg: Message): Boolean {
-//        trigger ?: return false
-//        val msgContent = msg.contents.toString(CourseBotImpl.charset)
-//        return msgContent.startsWith(trigger)
-//    }
-//
-//    private fun calculateExpression(msg: Message): Int? {
-//        val expression = msg.contents.toString(CourseBotImpl.charset).substringAfter("${calculatorTrigger!!} ")
-//        return try {
-//            CourseBotImpl.calculatorEngine.eval(expression) as Int
-//        } catch (e: Exception) {
-//            null
-//        }
-//    }
-//
-//    private fun incrementChannelCounterList(channel: String, channelCounterList: ArrayList<String>, userName: String) {
-//        var existsFlag = false
-//        for (i in 0 until channelCounterList.size) {
-//            val (count, otherUser) = parseChannelCounterEntry(channelCounterList[i])
-//            if (otherUser != userName) continue
-//            existsFlag = true
-//            val newCount = count + 1
-//            channelCounterList[i] = "$newCount/$userName"
-//            tryUpdateMostActiveUser(channel, newCount, userName)
-//        }
-//
-//        if (existsFlag) {
-//            channelCounterList.add("1/$userName")
-//            tryUpdateMostActiveUser(channel, 1L, userName)
-//        }
-//    }
-//
-//    private fun tryUpdateMostActiveUser(channel: String, count: Long, otherUser: String) {
-//        val currentMostActiveCount = channelMostActiveUserMessageCountMap[channel]
-//        if (currentMostActiveCount == null || count > currentMostActiveCount) {
-//            channelMostActiveUserMap[channel] = otherUser
-//            channelMostActiveUserMessageCountMap[channel] = count
-//        }
-//    }
+    private fun messageStartsWithTrigger(trigger: String?, msg: Message): Boolean {
+        trigger ?: return false
+        val msgContent = msg.contents.toString(charset)
+        return msgContent.startsWith(trigger)
+    }
+
+    private fun calculateExpression(msg: Message, trigger: String): Int? {
+        val expression = msg.contents.toString(charset).substringAfter("${trigger!!} ")
+        return try {
+            calculatorEngine.eval(expression) as Int
+        } catch (e: Exception) {
+            null
+        }
+    }
+/*
+    private fun incrementChannelCounterList(channel: String, channelCounterList: ArrayList<String>, userName: String) {
+        var existsFlag = false
+        for (i in 0 until channelCounterList.size) {
+            val (count, otherUser) = parseChannelCounterEntry(channelCounterList[i])
+            if (otherUser != userName) continue
+            existsFlag = true
+            val newCount = count + 1
+            channelCounterList[i] = "$newCount/$userName"
+            tryUpdateMostActiveUser(channel, newCount, userName)
+        }
+
+        if (existsFlag) {
+            channelCounterList.add("1/$userName")
+            tryUpdateMostActiveUser(channel, 1L, userName)
+        }
+    }
+
+    private fun tryUpdateMostActiveUser(channel: String, count: Long, otherUser: String) {
+        val currentMostActiveCount = channelMostActiveUserMessageCountMap[channel]
+        if (currentMostActiveCount == null || count > currentMostActiveCount) {
+            channelMostActiveUserMap[channel] = otherUser
+            channelMostActiveUserMessageCountMap[channel] = count
+        }
+    }
+
+ */
 
     private fun parseChannelCounterEntry(entry: String): Pair<Long, String> {
         return Pair(entry.substringBefore('/').toLong(), entry.substringAfter('/'))
