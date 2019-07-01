@@ -123,7 +123,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun attachListeners(botName: String, token: String): CompletableFuture<Unit> {
         val dbBotAbstraction = DatabaseAbstraction(db, "bots", botName)
         val callbacks = listOf(
-                lastMessageCallbackCreator(dbBotAbstraction),
+                lastMessageCallbackCreator(dbBotAbstraction), // Done
                 messageCounterCallbackCreator(dbBotAbstraction),
                 keywordTrackingCallbackCreator(dbBotAbstraction),
                 calculatorCallbackCreator(dbBotAbstraction),
@@ -131,7 +131,6 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 surveyCallbackCreator(dbBotAbstraction))
 
         return removeListeners(callbacks, token).exceptionally {
-            println("HELLO!!!!")
         }.thenCompose {
             addListeners(callbacks, token)
         }
@@ -195,7 +194,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 .thenApply { it?.getInteger("bot_counter") ?: 0 }
                 .thenCompose { counter ->
                     db.document("metadata")
-                            .update("metadata")
+                            .create("metadata")
                             .set("bot_counter" to counter + 1)
                             .execute()
                 }.thenCompose {
@@ -208,7 +207,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                     botsList
                 }.thenCompose { botsList ->
                     db.document("metadata")
-                            .update("metadata")
+                            .create("metadata")
                             .set("all_bots" to botsList)
                             .execute()
                             .thenApply { Unit }

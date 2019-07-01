@@ -10,7 +10,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     fun writePrimitiveToDocument(key: String, value: Any?): CompletableFuture<Unit> {
         if (value != null) {
             return db.document(document)
-                    .update(id)
+                    .create(id)
                     .set(key to value)
                     .execute()
                     .thenApply { Unit }
@@ -24,7 +24,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     fun <T : Serializable> writeSerializableToDocument(key: String, value: T?): CompletableFuture<Unit> {
         if (value != null) {
             return db.document(document)
-                    .update(id)
+                    .create(id)
                     .set(key to ObjectSerializer.serialize(value))
                     .execute()
                     .thenApply { Unit }

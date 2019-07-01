@@ -33,11 +33,91 @@ class CourseBotTest {
     private val bots = injector.getInstance<CourseBots>()
     private val messageFactory = injector.getInstance<MessageFactory>()
 
+
     private val db = Database(SecureStorageFactoryMock())
 
     init {
         bots.prepare().join()
         bots.start().join()
+    }
+
+    @Test
+    fun `checking if update works properly`() {
+//        db.document("Folder")
+//                .create("Doc", mapOf("a list" to ArrayList<String>()))
+//                .execute()
+//                .join()
+
+        db.document("Folder")
+                .find("Doc", listOf("a list"))
+                .execute()
+                .thenApply {
+                    val list = it?.getAsList("a list") ?: mutableListOf()
+                    list.add("Hello")
+                    list
+                }.thenCompose { list ->
+                    db.document("Folder")
+                            .create("Doc", mapOf("a list" to list))
+                            .execute()
+                }.join()
+
+        var list = db.document("Folder")
+                .find("Doc", listOf("a list"))
+                .execute()
+                .thenApply { document ->
+                    if (document == null)
+                        ArrayList()
+                    else
+                        document.getAsList("a list")
+                }.join()
+
+        assertEquals(arrayListOf("Hello"), list)
+
+        db.document("Folder")
+                .find("Doc", listOf("a list"))
+                .execute()
+                .thenApply {
+                    val list = it?.getAsList("a list") ?: mutableListOf()
+                    list.add("Hi")
+                    list
+                }.thenCompose { list ->
+                    db.document("Folder")
+                            .create("Doc", mapOf("a list" to list))
+                            .execute()
+                }.join()
+
+        list = db.document("Folder")
+                .find("Doc", listOf("a list"))
+                .execute()
+                .thenApply { document ->
+                    if (document == null)
+                        ArrayList()
+                    else
+                        document.getAsList("a list")
+                }.join()
+
+        assertEquals(arrayListOf("Hello", "Hi"), list)
+
+        db.document("Folder")
+                .find("Doc", listOf("number"))
+                .execute()
+                .thenApply {
+                    it?.getInteger("number")?.plus(1) ?: 1
+                }.thenCompose { num ->
+                    db.document("Folder")
+                            .create("Doc", mapOf("number" to num))
+                            .execute()
+                }.join()
+
+        val (newList, num) = db.document("Folder")
+                .find("Doc", listOf("a list", "number"))
+                .execute()
+                .thenApply { document ->
+                    Pair(document?.getAsList("a list"), document?.getInteger("number"))
+                }.join()
+
+        assertEquals(list, newList)
+        assertEquals(1, num)
     }
 
     @Test

@@ -63,7 +63,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             else {
                 channelsList.add(channelName)
                 db.document("bots")
-                        .update(name)
+                        .create(name)
                         .set("channelsList" to channelsList)
                         .execute()
                         .thenApply { true }
@@ -84,7 +84,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }.thenCompose { list ->
             if (list != null) {
                 db.document("metadata")
-                        .update(channelName)
+                        .create(channelName)
                         .set("bots" to list)
                         .execute()
                         .thenApply { Unit }
@@ -131,7 +131,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }.thenCompose { list ->
             if (list != null) {
                 db.document("metadata")
-                        .update(channelName)
+                        .create(channelName)
                         .set("bots" to list)
                         .execute()
                         .thenApply { Unit }
