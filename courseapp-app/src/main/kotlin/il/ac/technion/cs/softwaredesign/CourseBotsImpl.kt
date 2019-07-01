@@ -29,7 +29,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         // String?
         private val KEY_TRIGGER_TIPPING = "tippingTrigger"
 
-        // Map: channel -> (username, count)
+        // Map: channel -> (username -> count)
         private val KEY_MAP_LEDGER = "ledgerMap"
         // Map: channel -> (username, count)
         private val KEY_MAP_USER_LAST_MESSAGE = "userLastMessageMap"
@@ -136,7 +136,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 calculatorCallbackCreator(dbAbstraction, token), // Done
                 keywordTrackingCallbackCreator(dbAbstraction), // Done
                 messageCounterCallbackCreator(dbAbstraction),
-                tippingCallbackCreator(dbAbstraction),
+                tippingCallbackCreator(dbAbstraction, token),
                 surveyCallbackCreator(dbAbstraction))
     }
 
@@ -253,6 +253,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         }
     }
 
+    //FIXME: incomplete callback; need to implement [incrementChannelCounterList]
     private fun messageCounterCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
@@ -301,12 +302,60 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         }
     }
 
-    private fun tippingCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
+    private fun tippingCallbackCreator(dbAbstraction: DatabaseAbstraction, token: String): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return CompletableFuture.completedFuture(Unit) //TODO: add this callback
+                return dbAbstraction.readStringFromDocument(KEY_TRIGGER_TIPPING).thenCompose { trigger ->
+                    if (!isChannelMessage(source)
+                            || msg.media != MediaType.TEXT
+                            || !messageStartsWithTrigger(trigger, msg)) {
+                        CompletableFuture.completedFuture(Unit)
+                    } else {
+                        val msgSuffix = msg.contents.toString(charset).substringAfter("${trigger!!} ")
+                            val receiver = msgSuffix.substringAfter(' ')
+                            app.isUserInChannel(token, extractChannelName(source)!!, receiver).thenCompose { isMember ->
+                                if (isMember == null || !isMember) {
+                                    CompletableFuture.completedFuture(Unit)
+                                } else {
+                                    dbAbstraction.readMapFromDocument<String, HashMap<String, Long>>(KEY_MAP_LEDGER).thenCompose { ledgerMap ->
+                                        performTipping(source, ledgerMap, msg, trigger)
+                                        dbAbstraction.writeSerializableToDocument(KEY_MAP_LEDGER, ledgerMap)
+                                    }
+                                }
+                            }
+                    }
+                }
             }
         }
+    }
+
+    private fun performTipping(source: String, ledgerMap: HashMap<String, HashMap<String, Long>>, msg: Message, trigger: String) {
+        val channelLedgerMap: HashMap<String, Long>
+        val channelName = extractChannelName(source)!!
+        if (ledgerMap[channelName] == null) {
+            channelLedgerMap = hashMapOf()
+            ledgerMap[channelName] = channelLedgerMap
+        } else
+            channelLedgerMap = ledgerMap[channelName]!!
+
+        val contentSuffix = msg.contents.toString(charset).substringAfter("$trigger ")
+        val amount = contentSuffix.substringBefore(' ').toLong()
+        val receiverName = contentSuffix.substringAfter(' ')
+        var senderBalance = channelLedgerMap[extractSenderUsername(source)]
+        var receiverBalance = channelLedgerMap[receiverName]
+
+        if (senderBalance == null)
+            senderBalance = 1000L
+
+        if (receiverBalance == null)
+            receiverBalance = 1000L
+
+        senderBalance -= amount
+        receiverBalance += amount
+
+        channelLedgerMap[extractSenderUsername(source)] = senderBalance
+        channelLedgerMap[receiverName] = receiverBalance
+        ledgerMap[channelName] = channelLedgerMap
     }
 
     private fun surveyCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {

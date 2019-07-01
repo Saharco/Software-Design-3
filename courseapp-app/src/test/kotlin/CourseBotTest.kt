@@ -288,9 +288,78 @@ class CourseBotTest {
         assertNull(bot.seenTime("admin").join())
     }
 
+    @Test
+    fun `Bot accurately keeps track of the richest user in a channel`() {
+        val adminToken = courseApp.login("Sahar", "a very strong password").join()
+        val otherToken = courseApp.login("Yuval", "a very weak password").join()
+        val otherToken2 = courseApp.login("Victor", "anak").join()
+        val channel = "#TakeCare"
+        val tipTrigger = "hello i\'d like to tip: "
+
+        courseApp.channelJoin(adminToken, channel).thenCompose {
+            courseApp.channelJoin(otherToken, channel)
+        }.thenCompose {
+            courseApp.channelJoin(otherToken2, channel)
+        }.join()
+
+        val bot = bots.bot("cool bot").join()
+        bot.join(channel).thenCompose {
+            bot.setTipTrigger(tipTrigger)
+        }.thenCompose {
+            courseApp.channelSend(adminToken, channel, messageFactory.create(
+                    MediaType.TEXT, "$tipTrigger 100 Victor".toByteArray()).join())
+        }.thenCompose {
+            courseApp.channelSend(otherToken2, channel, messageFactory.create(
+                    MediaType.TEXT, "$tipTrigger 50 Yuval".toByteArray()).join())
+        }.thenCompose {
+            courseApp.channelSend(otherToken2, channel, messageFactory.create(
+                    MediaType.TEXT, "$tipTrigger 200 Sahar".toByteArray()).join())
+        }.join()
+
+        val richestUser = bots.bot("cool bot").thenCompose {
+            it.richestUser("#TakeCare")
+        }.join()
+
+        assertEquals("Sahar", richestUser)
+    }
 
     @Test
-    fun `Bot accurately tracks a user's last activity across all channels`() {
+    fun `Bot accurately tracks the most active user in a channel`() {
+        val adminToken = courseApp.login("Sahar", "a very strong password").join()
+        val otherToken = courseApp.login("Yuval", "a very weak password").join()
+        val otherToken2 = courseApp.login("Victor", "anak").join()
+        val channel = "#TakeCare"
+
+        courseApp.channelJoin(adminToken, channel).thenCompose {
+            courseApp.channelJoin(otherToken, channel)
+        }.thenCompose {
+            courseApp.channelJoin(otherToken2, channel)
+        }.join()
+
+        val bot = bots.bot("cool bot").join()
+        bot.join(channel).thenCompose {
+            courseApp.channelSend(adminToken, channel, messageFactory.create(
+                    MediaType.TEXT, "my first message!".toByteArray()).join())
+        }.thenCompose {
+            courseApp.channelSend(otherToken2, channel, messageFactory.create(
+                    MediaType.TEXT, "my first message!".toByteArray()).join())
+        }.thenCompose {
+            courseApp.channelSend(otherToken2, channel, messageFactory.create(
+                    MediaType.TEXT, "my first message!".toByteArray()).join())
+        }.thenCompose {
+            courseApp.channelSend(adminToken, channel, messageFactory.create(
+                    MediaType.TEXT, "my second message!".toByteArray()).join())
+        }.join()
+
+        val mostActiveUser = bots.bot("cool bot").thenCompose {
+            it.mostActiveUser("#TakeCare")
+        }.join()
+
+        assertEquals("Sahar", mostActiveUser)
+    }
+
+    @Test
+    fun `Bot accurately tracks a user's last activity throughout all channels`() {
         val time1 = LocalDateTime.now()
         Thread.sleep(200)
 
@@ -423,4 +492,41 @@ class CourseBotTest {
             bot.surveyResults(survey).join()
         }, containsElementsInOrder(0L, 0L, 2L))
     }
+
+    @Test
+    fun `Bot's channel statistics are deleted upon leaving a channel`() {
+        TODO("Need to write this test case")
+    }
+
+    @Test
+    fun `Two bots keep separate ledgers when tracking users in the same channel when trigger word is identical for both`() {
+        TODO("Need to write this test case")
+    }
+
+    @Test
+    fun `Setting tip trigger to null returns the previous tip trigger`() {
+        TODO("Need to write this test case")
+    }
+
+
+    @Test
+    fun `Setting calculation trigger to null returns the previous tip trigger`() {
+        TODO("Need to write this test case")
+    }
+
+    @Test
+    fun `Bots' callbacks operate only on text messages, except for counting messages`() {
+        TODO("Need to write this test case")
+    }
+
+    @Test
+    fun `Bots' names are generated correctly`() {
+        TODO("Need to write this test case")
+    }
+
+    @Test
+    fun `Bot keeps a separate ledger for the same user through multiple channels`() {
+        TODO("Need to write this test case")
+    }
+
 }
