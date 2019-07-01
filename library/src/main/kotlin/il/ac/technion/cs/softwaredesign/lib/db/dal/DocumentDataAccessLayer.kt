@@ -65,26 +65,29 @@ class DocumentDataAccessLayer(private val defaultStorage: CompletableFuture<Secu
                                 else s.read((id + key).toByteArray())
                             }
                                     .thenApply { value ->
-                                        if (value == null) throw IllegalArgumentException("Key $key doesn't exist")
+                                        if (value == null)
+                                            false
+                                        else {
+                                            val type = value[0].toChar()
+                                            val bytes = value.drop(1).toByteArray()
+                                            val buffer = ByteBuffer.wrap(bytes)
+                                            val str = String(bytes)
 
-                                        val type = value[0].toChar()
-                                        val bytes = value.drop(1).toByteArray()
-                                        val buffer = ByteBuffer.wrap(bytes)
-                                        val str = String(bytes)
-
-                                        var actual: Any = str
-                                        when (type) {
-                                            'a' -> actual = buffer.long
-                                            'i' -> actual = buffer.int
-                                            'f' -> actual = buffer.float
-                                            'd' -> actual = buffer.double
-                                            's' -> actual = String(bytes)
-                                            'b' -> actual = bytes.isNotEmpty()
-                                            'p' -> actual = bytes
-                                            'l' -> actual = if (str.isNotEmpty()) str.split(",").toList() else listOf()
-                                            'k' -> actual = KeyPair(buffer.long, buffer.long)
+                                            var actual: Any = str
+                                            when (type) {
+                                                'a' -> actual = buffer.long
+                                                'i' -> actual = buffer.int
+                                                'f' -> actual = buffer.float
+                                                'd' -> actual = buffer.double
+                                                's' -> actual = String(bytes)
+                                                'b' -> actual = bytes.isNotEmpty()
+                                                'p' -> actual = bytes
+                                                'l' -> actual = if (str.isNotEmpty()) str.split(",").toList() else listOf()
+                                                'k' -> actual = KeyPair(buffer.long, buffer.long)
+                                            }
+                                            obj[key] = actual
+                                            true
                                         }
-                                        obj[key] = actual
                                     }
                         }.toTypedArray())
                                 .thenApply {

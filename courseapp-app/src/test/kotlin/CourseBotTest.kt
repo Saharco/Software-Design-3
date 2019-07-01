@@ -40,60 +40,6 @@ class CourseBotTest {
         bots.start().join()
     }
 
-
-    @Test
-    fun `can read and write weird objects to db`() {
-        val keywordsTracker = KeywordsTracker()
-        keywordsTracker["#TakeCare", MediaType.TEXT] = "Hello"
-        assertEquals(0, keywordsTracker["#TakeCare", MediaType.TEXT, "Hello"])
-        keywordsTracker.track("#TakeCare", mediaType = MediaType.TEXT, messageContent = "Hello")
-        assertEquals(1, keywordsTracker["#TakeCare", MediaType.TEXT, "Hello"])
-
-        db.document("Stuff")
-                .create("Thing")
-                .set("tracker" to ObjectSerializer.serialize(keywordsTracker))
-                .execute().join()
-
-        val remoteTracker = db.document("Stuff")
-                .find("Thing", listOf("tracker"))
-                .execute()
-                .thenApply { document ->
-                    val result = document?.getAsString("tracker")
-                    if (result == null)
-                        null
-                    else
-                        ObjectSerializer.deserialize<KeywordsTracker>(result)}
-                .join()!!
-
-        assertEquals(1, remoteTracker["#TakeCare", MediaType.TEXT, "Hello"])
-    }
-
-    @Test
-    fun `can read and write weird maps to db`() {
-        val map = hashMapOf(
-                5 to Pair("yuval", "stupidn't"),
-                4 to Pair("sahar", "smartn'tn't"),
-                3 to Pair("Clifford", null))
-
-        db.document("Stuff")
-                .create("Thing")
-                .set("map" to ObjectSerializer.serialize(map))
-                .execute().join()
-
-        val remoteMap = db.document("Stuff")
-                .find("Thing", listOf("map"))
-                .execute()
-                .thenApply { document ->
-                    val result = document?.getAsString("map")
-                    if (result == null)
-                        null
-                    else
-                        ObjectSerializer.deserialize<HashMap<Int, Pair<String, String?>>>(result)}
-                .join()!!
-
-        assertEquals(map, remoteMap)
-    }
-
     @Test
     fun `Can create a bot and make it join channels`() {
         val token = courseApp.login("gal", "hunter2").join()

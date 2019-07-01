@@ -131,7 +131,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 surveyCallbackCreator(dbBotAbstraction))
 
         return removeListeners(callbacks, token).exceptionally {
-            // it's okay if an exception is thrown here
+            println("HELLO!!!!")
         }.thenCompose {
             addListeners(callbacks, token)
         }
@@ -143,7 +143,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
             return CompletableFuture.completedFuture(Unit)
         return app.addListener(token, callbacks[index])
                 .thenCompose {
-                    removeListeners(callbacks, token, index + 1)
+                    addListeners(callbacks, token, index + 1)
                 }
     }
 
@@ -174,14 +174,18 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         return updateBotsMetadata(botName).thenCompose {
             app.login("$password$botName", password)
         }.thenCompose { token ->
-            db.document("bots")
-                    .create(botName, mapOf(
-                            "token" to token))
-                    .execute()
-                    .thenApply { token }
+            initializeBotDocument(botName, token).thenApply { token }
         }.thenApply { token ->
             CourseBotImpl(app, db, msgFactory, botName, token)
         }
+    }
+
+    private fun initializeBotDocument(botName: String, token: String): CompletableFuture<Unit> {
+        return db.document("bots")
+                .create(botName, mapOf(
+                        "token" to token))
+                .execute()
+                .thenApply { Unit }
     }
 
     private fun updateBotsMetadata(botName: String): CompletableFuture<Unit> {
