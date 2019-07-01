@@ -176,7 +176,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
     private fun createNewBot(botName: String): CompletableFuture<CourseBot> {
         return updateBotsMetadata(botName).thenCompose {
-            app.login("$password$botName", password)
+            app.login(botName, password)
         }.thenCompose { token ->
             initializeBotDocument(botName, token).thenApply { token }
         }.thenApply { token ->
@@ -245,8 +245,9 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun keywordTrackingCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return dbAbstraction.readKeywordsTrackerFromDocument(KEY_KEYWORDS_TRACKER).thenApply {
+                return dbAbstraction.readKeywordsTrackerFromDocument(KEY_KEYWORDS_TRACKER).thenCompose {
                     it.track(extractChannelName(source), msg.media, msg.contents.toString(charset))
+                    dbAbstraction.writeSerializableToDocument(KEY_KEYWORDS_TRACKER, it)
                 }
             }
         }
