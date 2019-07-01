@@ -7,7 +7,7 @@ import java.util.concurrent.CompletableFuture
 
 class DatabaseAbstraction(private val db: Database, private val document: String, private val id: String) {
 
-    private fun writePrimitiveToDocument(key: String, value: Any?): CompletableFuture<Unit> {
+    fun writePrimitiveToDocument(key: String, value: Any?): CompletableFuture<Unit> {
         if (value != null) {
             return db.document(document)
                     .update(id)
@@ -21,7 +21,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 .thenApply { Unit }
     }
 
-    private fun <T : Serializable> writeSerializableToDocument(key: String, value: T?): CompletableFuture<Unit> {
+    fun <T : Serializable> writeSerializableToDocument(key: String, value: T?): CompletableFuture<Unit> {
         if (value != null) {
             return db.document(document)
                     .update(id)
@@ -35,14 +35,14 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 .thenApply { Unit }
     }
 
-    private fun readStringFromDocument(key: String): CompletableFuture<String?> {
+    fun readStringFromDocument(key: String): CompletableFuture<String?> {
         return db.document(document)
                 .find(id, listOf(key))
                 .execute()
                 .thenApply { it?.getAsString(key) }
     }
 
-    private fun <K, V> readMapFromDocument(key: String): CompletableFuture<HashMap<K, V>> {
+    fun <K, V> readMapFromDocument(key: String): CompletableFuture<HashMap<K, V>> {
         return db.document(document)
                 .find(id, listOf(key))
                 .execute()
@@ -54,7 +54,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 }
     }
 
-    private fun <T> readListFromDocument(key: String): CompletableFuture<ArrayList<T>> {
+    fun <T> readListFromDocument(key: String): CompletableFuture<ArrayList<T>> {
         return db.document(document)
                 .find(id, listOf(key))
                 .execute()
@@ -66,7 +66,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 }
     }
 
-    private fun readKeywordsTrackerFromDocument(key: String): CompletableFuture<KeywordsTracker> {
+    fun readKeywordsTrackerFromDocument(key: String): CompletableFuture<KeywordsTracker> {
         return db.document(document)
                 .find(id, listOf(key))
                 .execute()
@@ -79,7 +79,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     }
 
 
-    private fun <T> removeFromList(listName: String, value: T): CompletableFuture<Unit> {
+    fun <T> removeFromList(listName: String, value: T): CompletableFuture<Unit> {
         return readListFromDocument<T>(listName).thenApply {
             it.remove(value)
             it
@@ -88,7 +88,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
         }
     }
 
-    private fun <K, V> removeFromMap(mapName: String, key: K): CompletableFuture<Unit> {
+    fun <K, V> removeFromMap(mapName: String, key: K): CompletableFuture<Unit> {
         return readMapFromDocument<K, V>(mapName).thenApply {
             it.remove(key)
             it
