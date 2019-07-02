@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture
 class DatabaseAbstraction(private val db: Database, private val document: String, val id: String) {
 
     /**
-     * writes a primitive type (such as Int) to the document.
+     * Writes a primitive type (such as Int) to the document.
      * @param key - the field's key.
      * @param value - the value to write to the supplied field.
      */
@@ -35,7 +35,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     }
 
     /**
-     * writes a Serializable object into a field in the document.
+     * Writes a Serializable object into a field in the document.
      * @param key - the field's key.
      * @param value - the value to write to the supplied field.
      */
@@ -54,7 +54,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     }
 
     /**
-     * reads a String from a field.
+     * Reads a String from a field.
      * @param key - the String's key.
      */
     fun readString(key: String): CompletableFuture<String?> {
@@ -65,7 +65,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     }
 
     /**
-     * reads a Serializable object from the document.
+     * Reads a Serializable object from the document.
      * @param key - the object's key.
      * @param ifAbsent - if the field is empty this value will be returned.
      */
@@ -81,7 +81,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     }
 
     /**
-     * removes an item from a list which is stored in the document.
+     * Removes an item from a list which is stored in the document.
      * @param listName - the list's name (key).
      * @param value - the item to be removed from the list.
      */
@@ -95,7 +95,7 @@ class DatabaseAbstraction(private val db: Database, private val document: String
     }
 
     /**
-     * removes an item from a map which is stored in the document given it's key.
+     * Removes an item from a map which is stored in the document given it's key.
      * @param mapName - the map's name (key)
      * @param key - the key that identifies the item that needs to be deleted from the map.
      */

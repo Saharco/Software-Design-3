@@ -471,7 +471,7 @@ class CourseBotTest {
         courseApp.channelSend(adminToken, channel, messageFactory.create(
                 MediaType.TEXT, "$tipTrigger -100 yuval".toByteArray()).join()).join()
 
-        assertNull(bot.richestUser(channel))
+        assertNull(bot.richestUser(channel).join())
     }
 
     @Test
@@ -495,7 +495,7 @@ class CourseBotTest {
         courseApp.channelSend(adminToken, channel, messageFactory.create(
                 MediaType.TEXT, "$tipTrigger 1100 yuval".toByteArray()).join()).join()
 
-        assertNull(bot.richestUser(channel))
+        assertNull(bot.richestUser(channel).join())
     }
 
     @Test
@@ -528,14 +528,14 @@ class CourseBotTest {
 
         bot2.join(channel).join()
 
-        assertEquals("yuval", bot1.richestUser(channel))
-        assertNull(bot2.richestUser(channel))
+        assertEquals("yuval", bot1.richestUser(channel).join())
+        assertNull(bot2.richestUser(channel).join())
 
         courseApp.channelSend(otherToken, channel, messageFactory.create(
                 MediaType.TEXT, "$tipTrigger 200 sahar".toByteArray()).join()).join()
 
-        assertEquals("yuval", bot1.richestUser(channel))
-        assertEquals("sahar", bot2.richestUser(channel))
+        assertEquals("yuval", bot1.richestUser(channel).join())
+        assertEquals("sahar", bot2.richestUser(channel).join())
     }
 
     @Test
@@ -579,8 +579,8 @@ class CourseBotTest {
         // channel1 bits: adminToken (sahar): 200, channel1Token (yuval): 1800
         // channel2 bits: adminToken (sahar): 1200, channel2Token (victor): 800
 
-        assertEquals("yuval", bot.richestUser(channel1))
-        assertEquals("sahar", bot.richestUser(channel2))
+        assertEquals("yuval", bot.richestUser(channel1).join())
+        assertEquals("sahar", bot.richestUser(channel2).join())
     }
 
     @Test
