@@ -3,15 +3,11 @@ import com.google.inject.Guice
 import com.natpryce.hamkrest.assertion.assertThat
 import com.natpryce.hamkrest.equalTo
 import com.natpryce.hamkrest.present
-import fakes.library.mocks.SecureStorageFactoryMock
-import fakes.library.utils.ObjectSerializer
 import il.ac.technion.cs.softwaredesign.*
 import il.ac.technion.cs.softwaredesign.exceptions.NoSuchEntityException
 import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
-import il.ac.technion.cs.softwaredesign.lib.db.Database
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
-import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -32,9 +28,6 @@ class CourseBotTest {
     private val courseApp = injector.getInstance<CourseApp>()
     private val bots = injector.getInstance<CourseBots>()
     private val messageFactory = injector.getInstance<MessageFactory>()
-
-
-    private val db = Database(SecureStorageFactoryMock())
 
     init {
         bots.prepare().join()
@@ -415,7 +408,7 @@ class CourseBotTest {
 
     @Test
     fun `Bots' names are generated correctly and in order`() {
-        val adminToken = courseApp.login("sahar", "a very strong password").join()
+        courseApp.login("sahar", "a very strong password").join()
         val bots = bots.bot().thenCompose {
             bots.bot()
         }.thenCompose {
@@ -458,23 +451,163 @@ class CourseBotTest {
     }
 
     @Test
-    fun `Bot's channel statistics are deleted upon leaving a channel`() {
-        TODO("Need to write this test case")
+    fun `Bot ignores malicious users that try to tip others for negative amounts`() {
+        val (adminToken, otherToken) = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+            courseApp.login("yuval", "a very weak password").thenApply { Pair(adminToken, it) }
+        }.join()
+        val channel = "#TakeCare"
+        val tipTrigger = "hello i\'d like to tip: "
+        val bot = courseApp.channelJoin(adminToken, channel).thenCompose {
+            courseApp.channelJoin(otherToken, channel)
+        }.thenCompose {
+            bots.bot()
+        }.thenCompose { bot ->
+            bot.join(channel).thenCompose {
+                bot.setTipTrigger(tipTrigger).thenApply { bot }
+            }
+        }.join()
+
+        // this should not work!
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger -100 yuval".toByteArray()).join()).join()
+
+        assertNull(bot.richestUser(channel))
+    }
+
+    @Test
+    fun `Bot ignores users that try to tip more bits than they own`() {
+        val (adminToken, otherToken) = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+            courseApp.login("yuval", "a very weak password").thenApply { Pair(adminToken, it) }
+        }.join()
+        val channel = "#TakeCare"
+        val tipTrigger = "hello i\'d like to tip: "
+        val bot = courseApp.channelJoin(adminToken, channel).thenCompose {
+            courseApp.channelJoin(otherToken, channel)
+        }.thenCompose {
+            bots.bot()
+        }.thenCompose { bot ->
+            bot.join(channel).thenCompose {
+                bot.setTipTrigger(tipTrigger).thenApply { bot }
+            }
+        }.join()
+
+        // this should not work!
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger 1100 yuval".toByteArray()).join()).join()
+
+        assertNull(bot.richestUser(channel))
     }
 
     @Test
     fun `Two bots keep separate ledgers when tracking users in the same channel even if trigger word is identical for both`() {
-        TODO("Need to write this test case")
-    }
+        val (adminToken, otherToken) = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+            courseApp.login("yuval", "a very weak password").thenApply { Pair(adminToken, it) }
+        }.join()
+        val channel = "#TakeCare"
+        val tipTrigger = "hello i\'d like to tip: "
+        courseApp.channelJoin(adminToken, channel).thenCompose {
+            courseApp.channelJoin(otherToken, channel)
+        }.join()
 
-    @Test
-    fun `Bots' callbacks operate only on text messages, except for counting messages`() {
-        TODO("Need to write this test case")
+        val (bot1, bot2) = bots.bot().thenCompose { bot1 ->
+            bot1.setTipTrigger(tipTrigger).thenCompose {
+                bot1.join(channel).thenCompose {
+                    bots.bot().thenCompose { bot2 ->
+                        bot2.setTipTrigger(tipTrigger).thenApply {
+                            Pair(bot1, bot2)
+                        }
+                    }
+                }
+            }
+        }.join()
+
+        // bot1 is in the channel; bot2 isnt
+
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger 800 yuval".toByteArray()).join()).join()
+
+        bot2.join(channel).join()
+
+        assertEquals("yuval", bot1.richestUser(channel))
+        assertNull(bot2.richestUser(channel))
+
+        courseApp.channelSend(otherToken, channel, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger 200 sahar".toByteArray()).join()).join()
+
+        assertEquals("yuval", bot1.richestUser(channel))
+        assertEquals("sahar", bot2.richestUser(channel))
     }
 
     @Test
     fun `Bot keeps a separate ledger for the same user through multiple channels`() {
-        TODO("Need to write this test case")
+        val (adminToken, channel1Token, channel2Token) =
+                courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+                    courseApp.login("yuval", "a very weak password").thenCompose { channel1Token ->
+                        courseApp.login("victor", "anak").thenApply {
+                            Triple(adminToken, channel1Token, it)
+                        }
+                    }
+                }.join()
+        val channel1 = "#TakeCare"
+        val channel2 = "#TakeCare2"
+        val tipTrigger = "hello i\'d like to tip: "
+        courseApp.channelJoin(adminToken, channel1).thenCompose {
+            courseApp.channelJoin(channel1Token, channel1)
+        }.thenCompose {
+            courseApp.channelJoin(adminToken, channel2)
+        }.thenCompose {
+            courseApp.channelJoin(channel2Token, channel2)
+        }.join()
+
+        // channel1 members: adminToken (sahar), channel1Token (yuval)
+        // channel2 members: adminToken (sahar), channel2Token (victor)
+
+        val bot = bots.bot().thenCompose { bot ->
+            bot.setTipTrigger(tipTrigger).thenCompose {
+                bot.join(channel1).thenCompose {
+                    bot.join(channel2).thenApply { bot }
+                }
+            }
+        }.join()
+
+        courseApp.channelSend(adminToken, channel1, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger 800 yuval".toByteArray()).join()).join()
+
+        courseApp.channelSend(channel2Token, channel2, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger 200 sahar".toByteArray()).join()).join()
+
+        // channel1 bits: adminToken (sahar): 200, channel1Token (yuval): 1800
+        // channel2 bits: adminToken (sahar): 1200, channel2Token (victor): 800
+
+        assertEquals("yuval", bot.richestUser(channel1))
+        assertEquals("sahar", bot.richestUser(channel2))
     }
 
+    @Test
+    fun `Bots' callbacks operate only on text messages, except for counting messages & keywords tracking`() {
+        val (adminToken, otherToken) = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+            courseApp.login("yuval", "a very weak password").thenApply { Pair(adminToken, it) }
+        }.join()
+        val channel = "#TakeCare"
+        val trigger = "!hello:"
+        val bot = bots.bot().thenCompose { bot ->
+            bot.setTipTrigger(trigger).thenCompose {
+                bot.setCalculationTrigger(trigger).thenCompose {
+                    bot.join(channel).thenApply { bot }
+                }
+            }
+        }.join()
+
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.PICTURE, "$trigger 100 yuval".toByteArray()).join()).join()
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.PICTURE, "$trigger (40+40)/4".toByteArray()).join()).join()
+        
+        TODO("CONTINUE THIS!")
+    }
+
+    @Test
+    fun `Bot's channel statistics are deleted upon leaving a channel`() {
+        TODO("Need to write this test case")
+    }
 }
