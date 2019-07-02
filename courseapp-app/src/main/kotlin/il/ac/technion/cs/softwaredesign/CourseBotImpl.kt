@@ -41,7 +41,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         private val KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER = "channelMostActiveUserMessageCountMap"
         // Map: channel -> List(answer, counter)
         private val KEY_MAP_SURVEY = "surveyMap"
-        // Map: userName -> (id -> answer)
+        // Map: userName -> HashMap(id -> (answer, date))
         private val KEY_MAP_SURVEY_VOTERS = "surveyVotersMap"
 
         private val KEY_KEYWORDS_TRACKER = "keywordsTracker"
@@ -88,13 +88,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }
     }
 
-    //            channelsList.remove(channelName)
-//            //TODO: remove the channel from survey maps!
-//            ledgerMap.remove(channelName)
-//            userMessageCounterMap.remove(channelName)
-//            channelMostActiveUserMap.remove(channelName)
-//            channelMostActiveUserMessageCountMap.remove(channelName)
-//            keywordsTracker.remove(channelName)
     override fun part(channelName: String): CompletableFuture<Unit> {
         return app.channelPart(token, channelName).thenCompose {
             dbAbstraction.removeFromList(KEY_LIST_CHANNELS, channelName)
@@ -106,6 +99,30 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             dbAbstraction.removeFromMap<String, String?>(KEY_MAP_CHANNEL_MOST_ACTIVE_USER, channelName)
         }.thenCompose {
             dbAbstraction.removeFromMap<String, Long?>(KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER, channelName)
+        }.thenCompose {
+            dbAbstraction.readSerializable(KEY_MAP_SURVEY_VOTERS, hashMapOf<String, HashMap<String, Pair<String, LocalDateTime>>>())
+        }.thenCompose { surveyVotersMap ->
+            for ((userName, userVotes) in surveyVotersMap) {
+                for ((id, answerAndDate) in userVotes) {
+                    if (id.startsWith("$channelName/$name")) {
+                        userVotes.remove(id)
+                    }
+                }
+            }
+            dbAbstraction.writeSerializable(KEY_MAP_SURVEY_VOTERS, surveyVotersMap)
+        }.thenCompose {
+            dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, ArrayList<Pair<String, Long>>>())
+                    .thenCompose {surveyMap ->
+                        val channelSurveys = surveyMap[channelName]
+                        if (channelSurveys != null) {
+                            for ((i, pair) in channelSurveys.withIndex()) {
+                                val answer = pair.first
+                                channelSurveys[i] = Pair(answer, 0)
+                            }
+                            dbAbstraction.writeSerializable(KEY_MAP_SURVEY, surveyMap)
+                        } else
+                            CompletableFuture.completedFuture(Unit)
+                    }
         }.thenCompose {
             dbAbstraction.readSerializable(KEY_KEYWORDS_TRACKER, KeywordsTracker())
         }.thenApply {
@@ -134,7 +151,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             }
         }
     }
-
 
     override fun channels(): CompletableFuture<List<String>> {
         return dbAbstraction.readSerializable(KEY_LIST_CHANNELS, ArrayList<String>()).thenApply {
@@ -173,7 +189,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }
     }
 
-    //TODO: check if LocalDateTime is Serializable
     override fun seenTime(user: String): CompletableFuture<LocalDateTime?> {
         return dbAbstraction.readSerializable(KEY_MAP_USER_LAST_MESSAGE, HashMap<String, LocalDateTime>()).thenApply {
             it[user]
@@ -223,16 +238,18 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 throw NoSuchEntityException()
             msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenCompose { message ->
                 //TODO: Send this message in the channel!!!
-                val identifier = generateSurveyIdentifier(channel)
-                val newSurveyList = arrayListOf<Pair<String, Long>>()
-                for (answer in answers)
-                    newSurveyList.add(Pair(answer, 0L))
-                dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, ArrayList<Pair<String, Long>>>()).thenApply {
-                    it[identifier] = newSurveyList
-                    it
-                }.thenApply {
-                    dbAbstraction.writeSerializable(KEY_MAP_SURVEY, it)
-                    identifier
+                app.channelSend(token, channel, message).thenCompose {
+                    val identifier = generateSurveyIdentifier(channel)
+                    val newSurveyList = arrayListOf<Pair<String, Long>>()
+                    for (answer in answers)
+                        newSurveyList.add(Pair(answer, 0L))
+                    dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, ArrayList<Pair<String, Long>>>()).thenApply {
+                        it[identifier] = newSurveyList
+                        it
+                    }.thenApply {
+                        dbAbstraction.writeSerializable(KEY_MAP_SURVEY, it)
+                        identifier
+                    }
                 }
             }
         }

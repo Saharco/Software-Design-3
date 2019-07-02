@@ -387,10 +387,10 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
         if (receiverBalance == null)
             receiverBalance = 1000L
-
-        senderBalance -= amount
-        receiverBalance += amount
-
+        if (amount in 1..senderBalance) {
+            senderBalance -= amount
+            receiverBalance += amount
+        }
         channelLedgerMap[extractSenderUsername(source)] = senderBalance
         channelLedgerMap[receiverName] = receiverBalance
         ledgerMap[channelName] = channelLedgerMap
