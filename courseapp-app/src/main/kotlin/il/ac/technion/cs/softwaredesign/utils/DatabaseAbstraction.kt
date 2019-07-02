@@ -29,7 +29,8 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                     .thenApply { Unit }
         }
         return db.document(document)
-                .delete(id, listOf(key))
+                .update(id)
+                .remove(key)
                 .execute()
                 .thenApply { Unit }
     }
@@ -48,7 +49,8 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                     .thenApply { Unit }
         }
         return db.document(document)
-                .delete(id, listOf(key))
+                .update(id)
+                .remove(key)
                 .execute()
                 .thenApply { Unit }
     }

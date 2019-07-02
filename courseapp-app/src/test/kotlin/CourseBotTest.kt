@@ -292,6 +292,7 @@ class CourseBotTest {
 
         val time2 = bot.seenTime("sahar").join()!!
         assertTrue(time2.toString() > time1.toString())
+        Thread.sleep(200)
 
         courseApp.channelSend(adminToken, "#TakeCare2", messageFactory.create(
                 MediaType.TEXT, "second message".toByteArray()).join()).join()
@@ -585,11 +586,19 @@ class CourseBotTest {
 
     @Test
     fun `Bots' callbacks operate only on text messages, except for counting messages & keywords tracking`() {
-        val (adminToken, otherToken) = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
-            courseApp.login("yuval", "a very weak password").thenApply { Pair(adminToken, it) }
+        val listener = mockk<ListenerCallback>()
+        every { listener(any(), any()) }.returns(CompletableFuture.completedFuture(Unit))
+
+        val adminToken = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+            courseApp.login("yuval", "a very weak password").thenApply { adminToken }
         }.join()
-        val channel = "#TakeCare"
+
+        val channel = "#channel"
         val trigger = "!hello:"
+        courseApp.addListener(adminToken, listener).thenCompose {
+            courseApp.channelJoin(adminToken, channel)
+        }.join()
+
         val bot = bots.bot().thenCompose { bot ->
             bot.setTipTrigger(trigger).thenCompose {
                 bot.setCalculationTrigger(trigger).thenCompose {
@@ -598,16 +607,74 @@ class CourseBotTest {
             }
         }.join()
 
+        // tipping
         courseApp.channelSend(adminToken, channel, messageFactory.create(
                 MediaType.PICTURE, "$trigger 100 yuval".toByteArray()).join()).join()
+        // calculating
         courseApp.channelSend(adminToken, channel, messageFactory.create(
                 MediaType.PICTURE, "$trigger (40+40)/4".toByteArray()).join()).join()
-        
-        TODO("CONTINUE THIS!")
+        //survey
+        val surveyIdentifier = bot.runSurvey(channel, "will this test fail?", listOf("yes", "no")).join()
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.PICTURE, "no".toByteArray()).join()).join()
+
+        // verify that the bot did not calculate the given expression
+        verify {
+            listener.invoke("#channel@sahar", match { String(it.contents) == "$trigger 100 yuval" })
+            listener.invoke("#channel@sahar", match { String(it.contents) == "$trigger (40+40)/4" }) // no reply to this!
+            listener.invoke("#channel@sahar", match { String(it.contents) == "no" })
+            listener.invoke("#channel@Anna0", match { String(it.contents) == "will this test fail?" })
+        }
+
+        assertNull(bot.richestUser(channel).join())
+        val surveyResult = bot.surveyResults(surveyIdentifier).join()
+        assertEquals(listOf(0L, 0L), surveyResult)
     }
 
     @Test
     fun `Bot's channel statistics are deleted upon leaving a channel`() {
-        TODO("Need to write this test case")
+        val adminToken = courseApp.login("sahar", "a very strong password").thenCompose { adminToken ->
+            courseApp.login("yuval", "a very weak password").thenApply { adminToken }
+        }.join()
+
+        val channel = "#TakeCare"
+        val tipTrigger = "!tip"
+        val calculatorTrigger = "!calculator"
+        courseApp.channelJoin(adminToken, channel).join()
+        val bot = bots.bot().thenCompose { bot ->
+            bot.setTipTrigger(tipTrigger).thenCompose {
+                bot.setCalculationTrigger(calculatorTrigger).thenCompose {
+                    bot.join(channel).thenApply { bot }
+                }
+            }
+        }.join()
+
+        // regex
+        bot.beginCount(channel, null, MediaType.TEXT).join()
+        // tip
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.TEXT, "$tipTrigger 100 yuval".toByteArray()).join()).join()
+        // survey
+        val surveyIdentifier = bot.runSurvey(channel, "will this test fail?", listOf("yes", "no")).join()
+        courseApp.channelSend(adminToken, channel, messageFactory.create(
+                MediaType.TEXT, "no".toByteArray()).join()).join()
+
+        // * bot has left the channel (and then joined it)
+        bot.part(channel).thenCompose {
+            bot.join(channel)
+        }.join()
+
+        // these stay the same:
+        assertEquals(calculatorTrigger, bot.setCalculationTrigger(null).join())
+        assertEquals(tipTrigger, bot.setTipTrigger(null).join())
+        assertNotNull(bot.seenTime("sahar").join())
+
+        // these are removed:
+        assertNull(bot.mostActiveUser(channel).join())
+        assertNull(bot.richestUser(channel).join())
+
+        // these are reset
+        assertEquals(listOf(0L, 0L), bot.surveyResults(surveyIdentifier).join())
+        assertEquals(0L, bot.count(channel, null, MediaType.TEXT).join())
     }
 }

@@ -19,7 +19,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
 
     companion object {
         private val charset = Charsets.UTF_8
-        private val calculatorEngine = ScriptEngineManager().getEngineByName("JavaScript")
 
         // List(channel)
         private val KEY_LIST_CHANNELS = "channelsList"
@@ -102,8 +101,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         }.thenCompose {
             dbAbstraction.readSerializable(KEY_MAP_SURVEY_VOTERS, hashMapOf<String, HashMap<String, Pair<String, LocalDateTime>>>())
         }.thenCompose { surveyVotersMap ->
-            for ((userName, userVotes) in surveyVotersMap) {
-                for ((id, answerAndDate) in userVotes) {
+            for ((_, userVotes) in surveyVotersMap) {
+                for ((id, _) in userVotes) {
                     if (id.startsWith("$channelName/$name")) {
                         userVotes.remove(id)
                     }
@@ -111,14 +110,14 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             }
             dbAbstraction.writeSerializable(KEY_MAP_SURVEY_VOTERS, surveyVotersMap)
         }.thenCompose {
+            // FIXME: key for this map is the identifier atm, which is bad
             dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, ArrayList<Pair<String, Long>>>())
                     .thenCompose {surveyMap ->
                         val channelSurveys = surveyMap[channelName]
                         if (channelSurveys != null) {
-                            for ((i, pair) in channelSurveys.withIndex()) {
-                                val answer = pair.first
-                                channelSurveys[i] = Pair(answer, 0)
-                            }
+                            for ((i, pair) in channelSurveys.withIndex())
+                                channelSurveys[i] = Pair(pair.first, 0)
+                            surveyMap[channelName] = channelSurveys
                             dbAbstraction.writeSerializable(KEY_MAP_SURVEY, surveyMap)
                         } else
                             CompletableFuture.completedFuture(Unit)
@@ -176,15 +175,13 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     override fun setCalculationTrigger(trigger: String?): CompletableFuture<String?> {
-        return dbAbstraction.readString(KEY_TRIGGER_CALCULATOR).thenCompose {
-            val prevTrigger = it
+        return dbAbstraction.readString(KEY_TRIGGER_CALCULATOR).thenCompose { prevTrigger ->
             dbAbstraction.writePrimitive(KEY_TRIGGER_CALCULATOR, trigger).thenApply { prevTrigger }
         }
     }
 
     override fun setTipTrigger(trigger: String?): CompletableFuture<String?> {
-        return dbAbstraction.readString(KEY_TRIGGER_TIPPING).thenCompose {
-            val prevTrigger = it
+        return dbAbstraction.readString(KEY_TRIGGER_TIPPING).thenCompose { prevTrigger ->
             dbAbstraction.writePrimitive(KEY_TRIGGER_TIPPING, trigger).thenApply { prevTrigger }
         }
     }
