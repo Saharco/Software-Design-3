@@ -254,7 +254,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         }
     }
 
-    //FIXME: incomplete callback; need to implement [incrementChannelCounterList]
+    //TODO: incomplete callback; need to implement [incrementChannelCounterList]
     private fun messageCounterCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
@@ -265,11 +265,11 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
                 return dbAbstraction.readSerializable(KEY_MAP_USER_MESSAGE_COUNTER, HashMap<String, ArrayList<String>>())
                         .thenCompose { userMessageCounterMap ->
-                            val channelCounterList = userMessageCounterMap[channelName] ?: ArrayList()
-                            incrementChannelCounterList(dbAbstraction, channelName, channelCounterList, userName).thenCompose {
+                            val channelCounterList = userMessageCounterMap[channelName] ?: arrayListOf()
+                            incrementChannelCounterList(dbAbstraction, channelName, channelCounterList, userName).thenApply {
                                 userMessageCounterMap[channelName] = channelCounterList
                                 dbAbstraction.writeSerializable(KEY_MAP_USER_MESSAGE_COUNTER, userMessageCounterMap)
-                            }
+                            }.thenApply { Unit }
                         }
             }
         }
@@ -280,7 +280,44 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
             : CompletableFuture<Unit> {
         // channel -> List(${counter}+'/'+${username})
         // TODO: implement this
-        return CompletableFuture.completedFuture(Unit)
+        return dbAbstraction.readSerializable(KEY_MAP_CHANNEL_MOST_ACTIVE_USER, hashMapOf<String, String?>()
+        ).thenCompose { mostActiveUser ->
+            dbAbstraction.readSerializable(KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER, hashMapOf<String, Long?>())
+                    .thenCompose { mostActiveUserMessageCount ->
+                        var existsFlag = false
+                        for (i in 0 until channelCounterList.size) {
+                            val (count, otherUser) = parseChannelCounterEntry(channelCounterList[i])
+                            if (otherUser != userName) continue
+                            existsFlag = true
+                            val newCount = count + 1
+                            channelCounterList[i] = "$newCount/$userName"
+                            tryUpdateMostActiveUser(channelName, newCount, userName, mostActiveUser, mostActiveUserMessageCount)
+                        }
+                        if (!existsFlag) {
+                            channelCounterList.add("1/$userName")
+                            tryUpdateMostActiveUser(channelName, 1L, userName, mostActiveUser, mostActiveUserMessageCount)
+                        }
+                        dbAbstraction.writeSerializable(KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER, mostActiveUserMessageCount)
+                                .thenApply {
+                                    dbAbstraction.writeSerializable(KEY_MAP_CHANNEL_MOST_ACTIVE_USER, mostActiveUser)
+                                }.thenApply { Unit }
+                    }
+
+        }
+    }
+
+    private fun tryUpdateMostActiveUser(channel: String, count: Long, otherUser: String,
+                                        channelMostActiveUserMap: HashMap<String, String?>,
+                                        channelMostActiveUserMessageCountMap: HashMap<String, Long?>) {
+        val currentMostActiveCount = channelMostActiveUserMessageCountMap[channel]
+        if (count == currentMostActiveCount) {
+            channelMostActiveUserMap[channel] = null
+            channelMostActiveUserMessageCountMap[channel] = count
+        }
+        if (currentMostActiveCount == null || count > currentMostActiveCount) {
+            channelMostActiveUserMap[channel] = otherUser
+            channelMostActiveUserMessageCountMap[channel] = count
+        }
     }
 
     private fun lastMessageCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
@@ -313,17 +350,17 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                         CompletableFuture.completedFuture(Unit)
                     } else {
                         val msgSuffix = msg.contents.toString(charset).substringAfter("${trigger!!} ")
-                            val receiver = msgSuffix.substringAfter(' ')
-                            app.isUserInChannel(token, extractChannelName(source)!!, receiver).thenCompose { isMember ->
-                                if (isMember == null || !isMember) {
-                                    CompletableFuture.completedFuture(Unit)
-                                } else {
-                                    dbAbstraction.readSerializable(KEY_MAP_LEDGER, HashMap<String, HashMap<String, Long>>()).thenCompose { ledgerMap ->
-                                        performTipping(source, ledgerMap, msg, trigger)
-                                        dbAbstraction.writeSerializable(KEY_MAP_LEDGER, ledgerMap)
-                                    }
+                        val receiver = msgSuffix.substringAfter(' ')
+                        app.isUserInChannel(token, extractChannelName(source)!!, receiver).thenCompose { isMember ->
+                            if (isMember == null || !isMember) {
+                                CompletableFuture.completedFuture(Unit)
+                            } else {
+                                dbAbstraction.readSerializable(KEY_MAP_LEDGER, HashMap<String, HashMap<String, Long>>()).thenCompose { ledgerMap ->
+                                    performTipping(source, ledgerMap, msg, trigger)
+                                    dbAbstraction.writeSerializable(KEY_MAP_LEDGER, ledgerMap)
                                 }
                             }
+                        }
                     }
                 }
             }
@@ -359,14 +396,56 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         ledgerMap[channelName] = channelLedgerMap
     }
 
+    //TODO:
     private fun surveyCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                return CompletableFuture.completedFuture(Unit) //TODO: add this callback
+                if (!isChannelMessage(source)
+                        || msg.media != MediaType.TEXT) {
+                    return CompletableFuture.completedFuture(Unit)
+                }
+                val messageChannelName = extractChannelName(source)!!
+                val userName = extractSenderUsername(source)
+
+                return dbAbstraction.readSerializable(KEY_MAP_SURVEY_VOTERS, hashMapOf<String, HashMap<String, Pair<String, LocalDateTime>>>())
+                        .thenCompose { surveyVoters ->
+                            val voterList = surveyVoters[userName] ?: hashMapOf()
+                            dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, ArrayList<Pair<String, Long>>>())
+                                    .thenCompose { surveyMap ->
+                                        //change to compose
+                                        for ((id, surveyListOfAnswers) in surveyMap) {
+                                            if (voterList.containsKey(id)) {
+                                                for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                                                    val answer = pair.first
+                                                    val counter = pair.second
+                                                    if (answer == voterList[id]?.first) {
+                                                        surveyListOfAnswers[i] = Pair(answer, counter - 1)
+                                                        voterList.remove(id)
+                                                    }
+                                                }
+                                            }
+                                            //surveyMap[id] = surveyListOfAnswers
+                                        }
+                                        for ((id, surveyListOfAnswers) in surveyMap) {
+                                            if (id.startsWith(messageChannelName + "/" + dbAbstraction.id)) {
+                                                for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                                                    val answer = pair.first
+                                                    val counter = pair.second
+                                                    if (answer == msg.contents.toString(charset)) {
+                                                        surveyListOfAnswers[i] = Pair(answer, counter + 1)
+                                                        voterList[id] = Pair(answer, msg.created)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        surveyVoters[userName] = voterList
+                                        dbAbstraction.writeSerializable(KEY_MAP_SURVEY_VOTERS, surveyVoters)
+                                                .thenCompose { dbAbstraction.writeSerializable(KEY_MAP_SURVEY, surveyMap) }
+                                    }.thenApply { Unit }
+                        }
             }
         }
     }
-
     //FIXME: here be dragons and scary callbacks and helper methods. refactor these A'ols
 
     //

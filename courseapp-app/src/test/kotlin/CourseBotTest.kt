@@ -341,7 +341,7 @@ class CourseBotTest {
             courseApp.channelSend(adminToken, channel, messageFactory.create(
                     MediaType.TEXT, "my first message!".toByteArray()).join())
         }.thenCompose {
-            courseApp.channelSend(otherToken2, channel, messageFactory.create(
+            courseApp.channelSend(otherToken, channel, messageFactory.create(
                     MediaType.TEXT, "my first message!".toByteArray()).join())
         }.thenCompose {
             courseApp.channelSend(otherToken2, channel, messageFactory.create(
@@ -480,15 +480,14 @@ class CourseBotTest {
         val bot = bots.bot()
                 .thenCompose { bot -> bot.join("#channel").thenApply { bot } }
                 .join()
-
         assertThat(runWithTimeout(ofSeconds(10)) {
             val survey = bot.runSurvey("#channel", "What is your favorite flavour of ice-cream?",
                     listOf("Cranberry",
                             "Charcoal",
                             "Chocolate-chip Mint")).join()
-            courseApp.channelSend(adminToken, "#channel", messageFactory.create(MediaType.TEXT, "Chocolate-chip Mint".toByteArray()).join())
-            courseApp.channelSend(regularUserToken, "#channel", messageFactory.create(MediaType.TEXT, "Chocolate-chip Mint".toByteArray()).join())
-            courseApp.channelSend(adminToken, "#channel", messageFactory.create(MediaType.TEXT, "Chocolate-chip Mint".toByteArray()).join())
+            courseApp.channelSend(adminToken, "#channel", messageFactory.create(MediaType.TEXT, "Chocolate-chip Mint".toByteArray()).join()).join()
+            courseApp.channelSend(regularUserToken, "#channel", messageFactory.create(MediaType.TEXT, "Chocolate-chip Mint".toByteArray()).join()).join()
+            courseApp.channelSend(adminToken, "#channel", messageFactory.create(MediaType.TEXT, "Chocolate-chip Mint".toByteArray()).join()).join()
             bot.surveyResults(survey).join()
         }, containsElementsInOrder(0L, 0L, 2L))
     }

@@ -68,12 +68,12 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                         .find(channelName, listOf("bots"))
                         .execute()
                         .thenApply {
-                            val botsList = it?.getAsList("bots") ?: mutableListOf()
+                            val botsList = it?.getAsList("bots") as ArrayList? ?: arrayListOf()
                             botsList.add(name)
                             botsList
                         }
             } else {
-                CompletableFuture.completedFuture(null as MutableList<String>?)
+                CompletableFuture.completedFuture(null as ArrayList<String>?)
             }
         }.thenCompose { list ->
             if (list != null) {
@@ -118,7 +118,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                     .find(channelName, listOf("bots"))
                     .execute()
                     .thenApply {
-                        val botsList = it?.getAsList("bots") ?: mutableListOf()
+                        val botsList = it?.getAsList("bots") ?: arrayListOf()
                         botsList.remove(name)
                         botsList
                     }
@@ -224,10 +224,10 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenCompose { message ->
                 //TODO: Send this message in the channel!!!
                 val identifier = generateSurveyIdentifier(channel)
-                val newSurveyList = mutableListOf<Pair<String, Long>>()
+                val newSurveyList = arrayListOf<Pair<String, Long>>()
                 for (answer in answers)
                     newSurveyList.add(Pair(answer, 0L))
-                dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, MutableList<Pair<String, Long>>>()).thenApply {
+                dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, ArrayList<Pair<String, Long>>>()).thenApply {
                     it[identifier] = newSurveyList
                     it
                 }.thenApply {
@@ -241,9 +241,9 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private fun generateSurveyIdentifier(channel: String) = "$channel/$name/${LocalDateTime.now()}"
 
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
-        return dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, MutableList<Pair<String, Long>>>()).thenApply { surveyMap ->
+        return dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, ArrayList<Pair<String, Long>>>()).thenApply { surveyMap ->
             val resultPairs = surveyMap[identifier] ?: throw NoSuchEntityException()
-            val countResultList = mutableListOf<Long>()
+            val countResultList = arrayListOf<Long>()
             for ((_, count) in resultPairs) {
                 countResultList.add(count)
             }

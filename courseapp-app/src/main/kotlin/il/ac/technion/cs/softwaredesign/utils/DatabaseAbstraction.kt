@@ -5,7 +5,7 @@ import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
 import java.io.Serializable
 import java.util.concurrent.CompletableFuture
 
-class DatabaseAbstraction(private val db: Database, private val document: String, private val id: String) {
+class DatabaseAbstraction(private val db: Database, private val document: String, val id: String) {
 
     fun writePrimitive(key: String, value: Any?): CompletableFuture<Unit> {
         if (value != null) {
