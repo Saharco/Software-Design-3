@@ -19,7 +19,6 @@ class Database @Inject constructor(private val factory: SecureStorageFactory) {
 
     private val treeDALS: MutableMap<String, TreeDataAccessLayer<String>> = HashMap()
     private val listDALS: MutableMap<String, StorageList> = HashMap()
-    private val listStorage = factory.open(LIST_DATABASE.toByteArray())
     private val documentDAL: DocumentDataAccessLayer = DocumentDataAccessLayer(factory.open(DEFAULT_DATABASE.toByteArray()))
 
 
@@ -54,12 +53,12 @@ class Database @Inject constructor(private val factory: SecureStorageFactory) {
     /**
      *
      */
-    fun list(type: String = "", name: String): ListQueryBuilder {
-        val key = type + "_" + name
-        val dal = listDALS[key] ?: StorageList(key, listStorage)
-        listDALS[key] = dal
-        return ListQueryBuilder(dal)
-    }
+//    fun list(type: String = "", name: String): ListQueryBuilder {
+//        val key = type + "_" + name
+//        val dal = listDALS[key] ?: StorageList(key, listStorage)
+//        listDALS[key] = dal
+//        return ListQueryBuilder(dal)
+//    }
 
     /**
      * A query builder for the data
