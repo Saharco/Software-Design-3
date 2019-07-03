@@ -38,7 +38,7 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         private val KEY_MAP_CHANNEL_MOST_ACTIVE_USER = "mostActiveUser"
         // Map: channel -> count?
         private val KEY_MAP_CHANNEL_MOST_ACTIVE_USER_MESSAGE_COUNTER = "channelMostActiveUserMessageCountMap"
-        // Map: channel -> List(answer, counter)
+        // Map: channel -> Map(id -> List(answer, counter))
         private val KEY_MAP_SURVEY = "surveyMap"
         // Map: userName -> HashMap(id -> (answer, date))
         private val KEY_MAP_SURVEY_VOTERS = "surveyVotersMap"
@@ -111,12 +111,18 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             dbAbstraction.writeSerializable(KEY_MAP_SURVEY_VOTERS, surveyVotersMap)
         }.thenCompose {
             // FIXME: key for this map is the identifier atm, which is bad
-            dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, ArrayList<Pair<String, Long>>>())
-                    .thenCompose {surveyMap ->
+            dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>())
+                    .thenCompose { surveyMap ->
                         val channelSurveys = surveyMap[channelName]
                         if (channelSurveys != null) {
-                            for ((i, pair) in channelSurveys.withIndex())
-                                channelSurveys[i] = Pair(pair.first, 0)
+                            for ((id, listOfAnswersAndCounters) in channelSurveys) {
+                                for ((i, pair) in listOfAnswersAndCounters.withIndex()) {
+                                    val answer = pair.first
+                                    val counter = pair.second
+                                    listOfAnswersAndCounters[i] = Pair(answer, 0)
+                                }
+                                channelSurveys[id] = listOfAnswersAndCounters
+                            }
                             surveyMap[channelName] = channelSurveys
                             dbAbstraction.writeSerializable(KEY_MAP_SURVEY, surveyMap)
                         } else
@@ -240,8 +246,9 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                     val newSurveyList = arrayListOf<Pair<String, Long>>()
                     for (answer in answers)
                         newSurveyList.add(Pair(answer, 0L))
-                    dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, ArrayList<Pair<String, Long>>>()).thenApply {
-                        it[identifier] = newSurveyList
+                    dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>())
+                            .thenApply {
+                        it[channel] = hashMapOf(identifier to newSurveyList)
                         it
                     }.thenApply {
                         dbAbstraction.writeSerializable(KEY_MAP_SURVEY, it)
@@ -255,8 +262,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     private fun generateSurveyIdentifier(channel: String) = "$channel/$name/${LocalDateTime.now()}"
 
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
-        return dbAbstraction.readSerializable(KEY_MAP_SURVEY, HashMap<String, ArrayList<Pair<String, Long>>>()).thenApply { surveyMap ->
-            val resultPairs = surveyMap[identifier] ?: throw NoSuchEntityException()
+        return dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>()).thenApply { surveyMap ->
+            val resultPairs = (surveyMap[identifier.substringBefore("/")])?.get(identifier) ?: throw NoSuchEntityException()
             val countResultList = arrayListOf<Long>()
             for ((_, count) in resultPairs) {
                 countResultList.add(count)

@@ -47,7 +47,7 @@ class KeywordsTracker : Serializable {
         val regex = stringToRegex(stringPattern)
 
         if (sameRegex(regex, wildcardRegex) && mediaType == null)
-            throw IllegalArgumentException()
+            return 0L
 
         if (channel == null && mediaType == null) {
             // fetch from global tracker
@@ -57,21 +57,21 @@ class KeywordsTracker : Serializable {
         if (channel == null && mediaType != null) {
             // fetch from media tracker
             if (mediaTrackerMap[mediaType] == null)
-                throw IllegalArgumentException()
+                return 0L
             return fetchRegexCountFromList(mediaTrackerMap[mediaType]!!, regex)
         }
 
         if (mediaType == null && channel != null) {
             // fetch from channel tracker
             if (channelTrackerMap[channel] == null)
-                throw IllegalArgumentException()
+                return 0L
             return fetchRegexCountFromList(channelTrackerMap[channel]!!, regex)
         }
 
         // fetch from channel-media tracker
         val pair = Pair(channel, mediaType)
         if (channelMediaTrackerMap[pair] == null)
-            throw IllegalArgumentException()
+            return 0L
         return fetchRegexCountFromList(channelMediaTrackerMap[pair]!!, regex)
     }
 

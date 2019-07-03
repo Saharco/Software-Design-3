@@ -410,33 +410,37 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 return dbAbstraction.readSerializable(KEY_MAP_SURVEY_VOTERS, hashMapOf<String, HashMap<String, Pair<String, LocalDateTime>>>())
                         .thenCompose { surveyVoters ->
                             val voterList = surveyVoters[userName] ?: hashMapOf()
-                            dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, ArrayList<Pair<String, Long>>>())
+                            dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>())
                                     .thenCompose { surveyMap ->
+                                        val channelSurveyMap = surveyMap[messageChannelName]
                                         //change to compose
-                                        for ((id, surveyListOfAnswers) in surveyMap) {
-                                            if (voterList.containsKey(id)) {
-                                                for ((i, pair) in surveyListOfAnswers.withIndex()) {
-                                                    val answer = pair.first
-                                                    val counter = pair.second
-                                                    if (answer == voterList[id]?.first) {
-                                                        surveyListOfAnswers[i] = Pair(answer, counter - 1)
-                                                        voterList.remove(id)
+                                        if (channelSurveyMap != null) {
+                                            for ((id, surveyListOfAnswers) in channelSurveyMap) {
+                                                if (voterList.containsKey(id)) {
+                                                    for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                                                        val answer = pair.first
+                                                        val counter = pair.second
+                                                        if (answer == voterList[id]?.first) {
+                                                            surveyListOfAnswers[i] = Pair(answer, counter - 1)
+                                                            voterList.remove(id)
+                                                        }
+                                                    }
+                                                }
+                                                //surveyMap[id] = surveyListOfAnswers
+                                            }
+                                            for ((id, surveyListOfAnswers) in channelSurveyMap) {
+                                                if (id.startsWith(messageChannelName + "/" + dbAbstraction.id)) {
+                                                    for ((i, pair) in surveyListOfAnswers.withIndex()) {
+                                                        val answer = pair.first
+                                                        val counter = pair.second
+                                                        if (answer == msg.contents.toString(charset)) {
+                                                            surveyListOfAnswers[i] = Pair(answer, counter + 1)
+                                                            voterList[id] = Pair(answer, msg.created)
+                                                        }
                                                     }
                                                 }
                                             }
-                                            //surveyMap[id] = surveyListOfAnswers
-                                        }
-                                        for ((id, surveyListOfAnswers) in surveyMap) {
-                                            if (id.startsWith(messageChannelName + "/" + dbAbstraction.id)) {
-                                                for ((i, pair) in surveyListOfAnswers.withIndex()) {
-                                                    val answer = pair.first
-                                                    val counter = pair.second
-                                                    if (answer == msg.contents.toString(charset)) {
-                                                        surveyListOfAnswers[i] = Pair(answer, counter + 1)
-                                                        voterList[id] = Pair(answer, msg.created)
-                                                    }
-                                                }
-                                            }
+                                            surveyMap[messageChannelName] = channelSurveyMap
                                         }
                                         surveyVoters[userName] = voterList
                                         dbAbstraction.writeSerializable(KEY_MAP_SURVEY_VOTERS, surveyVoters)
