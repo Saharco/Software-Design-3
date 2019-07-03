@@ -10,7 +10,6 @@ import il.ac.technion.cs.softwaredesign.wrappers.KeywordsTracker
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import javax.script.ScriptEngineManager
-import javax.security.auth.callback.Callback
 
 class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val msgFactory: MessageFactory,
                                          private val db: Database)
@@ -21,9 +20,6 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
 
         private val charset = Charsets.UTF_8
         private val calculatorEngine = ScriptEngineManager().getEngineByName("JavaScript")
-
-        // List(channel)
-        private val KEY_LIST_CHANNELS = "channelsList"
 
         // String?
         private val KEY_TRIGGER_CALCULATOR = "calculatorTrigger"

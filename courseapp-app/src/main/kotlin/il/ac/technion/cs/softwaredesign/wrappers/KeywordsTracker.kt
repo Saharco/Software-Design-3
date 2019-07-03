@@ -3,7 +3,20 @@ package il.ac.technion.cs.softwaredesign.wrappers
 import il.ac.technion.cs.softwaredesign.messages.MediaType
 import java.io.Serializable
 import java.lang.IllegalArgumentException
+import il.ac.technion.cs.softwaredesign.CourseBot
 
+
+/**
+ * Helper class for [CourseBot].
+ * Tracks keywords' regex matches in the following divisions:
+ *  - all messages in all the channels the bot is a member of,
+ *  - all messages of a given MediaType in all the channels the bot is a member of,
+ *  - all messages in a given channel that the bot is a member of,
+ *  - all messages of a given MediaType in a given channel that the bot is a member of
+ *
+ * @see CourseBot.beginCount
+ * @see CourseBot.count
+ */
 class KeywordsTracker : Serializable {
 
     companion object {
@@ -15,6 +28,14 @@ class KeywordsTracker : Serializable {
     private val mediaTrackerMap = mutableMapOf<MediaType, ArrayList<Pair<Regex, Long>>>()
     private val globalTrackers = ArrayList<Pair<Regex, Long>>()
 
+    /**
+     * Tracks a new regular expression of the pattern [stringPattern] in all the divisions that correspond to [channel] and [mediaType].
+     * Setting the KeywordsTracker at [channel, mediaType] to value [stringPattern] when [mediaType] is null and [stringPattern] is null will do nothing.
+     *
+     * @param channel: channel in which to track the messages, or all channels if set to null
+     * @param mediaType: message types to track, or all message types if set to null
+     * @param stringPattern: regular expression to match new messages with
+     */
     operator fun set(channel: String?, mediaType: MediaType?, stringPattern: String?) {
         val regex = stringToRegex(stringPattern)
 
@@ -43,6 +64,15 @@ class KeywordsTracker : Serializable {
         }
     }
 
+    /**
+     * Get the keywords tracking count in a given division.
+     *
+     * @param channel: channel from which to return the tracking count, or all channels if set to null
+     * @param mediaType: message types of which to return the count, or all message types if set to null
+     * @param stringPattern: regex pattern that matches all the counted messages, or all messages if set to null
+     *
+     * @throw [IllegalArgumentException] if [mediaType] and [stringPattern] are both null
+     */
     operator fun get(channel: String?, mediaType: MediaType?, stringPattern: String?): Long {
         val regex = stringToRegex(stringPattern)
 
@@ -75,6 +105,13 @@ class KeywordsTracker : Serializable {
         return fetchRegexCountFromList(channelMediaTrackerMap[pair]!!, regex)
     }
 
+    /**
+     * Matches all the appropriate regular expressions on a given message, and updates counters upon match
+     *
+     * @param channel: channel in which the message was sent, or null if it's not a channel message
+     * @param mediaType: media type of the message
+     * @param messageContent: content of the message
+     */
     fun track(channel: String?, mediaType: MediaType, messageContent: String) {
         if (channel != null) {
             channelMediaTrackerMap[Pair(channel, mediaType)] =
@@ -85,9 +122,12 @@ class KeywordsTracker : Serializable {
         incrementRegexCounters(globalTrackers, messageContent)
     }
 
+    /**
+     * Removes all the keyword-tracks that correspond to [channelName]
+     */
     fun remove(channelName: String) {
         for (media in MediaType.values())
-            // remove channel-media tracker entry for all possible media types
+        // remove channel-media tracker entry for all possible media types
             channelMediaTrackerMap.remove(Pair(channelName, media))
         channelTrackerMap.remove(channelName)
     }

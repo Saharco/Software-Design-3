@@ -4,11 +4,9 @@ import com.google.inject.Inject
 import il.ac.technion.cs.softwaredesign.exceptions.NoSuchEntityException
 import il.ac.technion.cs.softwaredesign.exceptions.UserNotAuthorizedException
 import il.ac.technion.cs.softwaredesign.messages.MediaType
-import il.ac.technion.cs.softwaredesign.messages.Message
 import il.ac.technion.cs.softwaredesign.messages.MessageFactory
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
-import javax.script.ScriptEngineManager
 import kotlin.collections.ArrayList
 import il.ac.technion.cs.softwaredesign.lib.db.Database
 import il.ac.technion.cs.softwaredesign.utils.DatabaseAbstraction
