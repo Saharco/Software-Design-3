@@ -162,6 +162,11 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     override fun beginCount(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Unit> {
+        if (regex == null && mediaType == null) {
+            return CompletableFuture.supplyAsync {
+                throw IllegalArgumentException("Either regex / media type fields must be non-null")
+            }
+        }
         return dbAbstraction.readSerializable(KEY_KEYWORDS_TRACKER, KeywordsTracker()).thenApply {
             it ?: KeywordsTracker()
         }.thenCompose {

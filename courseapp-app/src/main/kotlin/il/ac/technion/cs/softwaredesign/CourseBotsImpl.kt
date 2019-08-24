@@ -121,10 +121,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun attachListeners(botName: String, token: String): CompletableFuture<Unit> {
         val dbBotAbstraction = DatabaseAbstraction(db, "bots", botName)
         val callbacks = createBotCallbacks(dbBotAbstraction, token)
-        return removeListeners(callbacks, token).exceptionally {
-        }.thenCompose {
-            addListeners(callbacks, token)
-        }
+        return addListeners(callbacks, token)
     }
 
     private fun createBotCallbacks(dbAbstraction: DatabaseAbstraction, token: String): List<ListenerCallback> {
@@ -145,16 +142,6 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         return app.addListener(token, callbacks[index])
                 .thenCompose {
                     addListeners(callbacks, token, index + 1)
-                }
-    }
-
-    private fun removeListeners(callbacks: List<ListenerCallback>, token: String, index: Int = 0)
-            : CompletableFuture<Unit> {
-        if (index >= callbacks.size)
-            return CompletableFuture.completedFuture(Unit)
-        return app.removeListener(token, callbacks[index])
-                .thenCompose {
-                    removeListeners(callbacks, token, index + 1)
                 }
     }
 

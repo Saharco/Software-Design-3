@@ -75,7 +75,7 @@ interface CourseApp {
      * The user identified by [token] will join [channel]. If the channel does not exist, it is created only if [token]
      * identifies a user who is an administrator.
      *
-     * Valid names for channels start with `#`, then have any number of English alphanumeric characters, underscores
+     * VALID names for channels start with `#`, then have any number of English alphanumeric characters, underscores
      * (`_`) and hashes (`#`).
      *
      * This is a *create* command.
