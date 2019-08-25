@@ -40,6 +40,8 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
         private val KEY_MAP_SURVEY = "surveyMap"
         // Map: userName -> HashMap(id -> (answer, date))
         private val KEY_MAP_SURVEY_VOTERS = "surveyVotersMap"
+        // Int
+        private val KEY_SURVEY_AMOUNT = "surveyAmount"
 
         private val KEY_KEYWORDS_TRACKER = "keywordsTracker"
     }
@@ -239,28 +241,40 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
                 throw NoSuchEntityException()
             msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenCompose { message ->
                 app.channelSend(token, channel, message).thenCompose {
-                    val identifier = generateSurveyIdentifier(channel)
-                    val newSurveyList = arrayListOf<Pair<String, Long>>()
-                    for (answer in answers)
-                        newSurveyList.add(Pair(answer, 0L))
-                    dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>())
-                            .thenApply {
-                        it[channel] = hashMapOf(identifier to newSurveyList)
-                        it
-                    }.thenApply {
-                        dbAbstraction.writeSerializable(KEY_MAP_SURVEY, it)
-                        identifier
+
+                    generateSurveyIdentifier(channel, dbAbstraction).thenCompose { identifier ->
+                        val newSurveyList = arrayListOf<Pair<String, Long>>()
+                        for (answer in answers)
+                            newSurveyList.add(Pair(answer, 0L))
+                        dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>())
+                                .thenApply {
+                                    if (it[channel] == null)
+                                        it[channel] = hashMapOf<String, ArrayList<Pair<String, Long>>>()
+                                    it[channel]!!.set(identifier, newSurveyList)
+                                    it
+                                }.thenApply {
+                                    dbAbstraction.writeSerializable(KEY_MAP_SURVEY, it)
+                                    identifier
+                                }
                     }
                 }
             }
         }
     }
 
-    private fun generateSurveyIdentifier(channel: String) = "$channel/$name/${LocalDateTime.now()}"
+    private fun generateSurveyIdentifier(channel: String, dbAbstraction: DatabaseAbstraction): CompletableFuture<String> {
+        return dbAbstraction.readSerializable(KEY_SURVEY_AMOUNT, 0).thenApply {
+            Pair("$channel/$name/$it", it)
+        }.thenCompose { pair ->
+            dbAbstraction.writeSerializable(KEY_SURVEY_AMOUNT, pair.second + 1)
+                    .thenApply { pair.first }
+        }
+    }
 
     override fun surveyResults(identifier: String): CompletableFuture<List<Long>> {
         return dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>()).thenApply { surveyMap ->
-            val resultPairs = (surveyMap[identifier.substringBefore("/")])?.get(identifier) ?: throw NoSuchEntityException()
+            val resultPairs = (surveyMap[identifier.substringBefore("/")])?.get(identifier)
+                    ?: throw NoSuchEntityException()
             val countResultList = arrayListOf<Long>()
             for ((_, count) in resultPairs) {
                 countResultList.add(count)
