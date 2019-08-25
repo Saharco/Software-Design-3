@@ -121,10 +121,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun attachListeners(botName: String, token: String): CompletableFuture<Unit> {
         val dbBotAbstraction = DatabaseAbstraction(db, "bots", botName)
         val callbacks = createBotCallbacks(dbBotAbstraction, token)
-        return removeListeners(callbacks, token).exceptionally {
-        }.thenCompose {
-            addListeners(callbacks, token)
-        }
+        return addListeners(callbacks, token)
     }
 
     private fun createBotCallbacks(dbAbstraction: DatabaseAbstraction, token: String): List<ListenerCallback> {
@@ -145,16 +142,6 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         return app.addListener(token, callbacks[index])
                 .thenCompose {
                     addListeners(callbacks, token, index + 1)
-                }
-    }
-
-    private fun removeListeners(callbacks: List<ListenerCallback>, token: String, index: Int = 0)
-            : CompletableFuture<Unit> {
-        if (index >= callbacks.size)
-            return CompletableFuture.completedFuture(Unit)
-        return app.removeListener(token, callbacks[index])
-                .thenCompose {
-                    removeListeners(callbacks, token, index + 1)
                 }
     }
 
@@ -254,7 +241,7 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
     private fun messageCounterCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
-                if (!isChannelMessage(source))
+                if (!isChannelMessage(source) || msg.media != MediaType.TEXT)
                     return CompletableFuture.completedFuture(Unit)
                 val channelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
@@ -392,7 +379,6 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
         ledgerMap[channelName] = channelLedgerMap
     }
 
-
     private fun surveyCallbackCreator(dbAbstraction: DatabaseAbstraction): ListenerCallback {
         return object : ListenerCallback {
             override fun invoke(source: String, msg: Message): CompletableFuture<Unit> {
@@ -403,22 +389,29 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                 val messageChannelName = extractChannelName(source)!!
                 val userName = extractSenderUsername(source)
 
-                return dbAbstraction.readSerializable(KEY_MAP_SURVEY_VOTERS, hashMapOf<String, HashMap<String, Pair<String, LocalDateTime>>>())
+                // username -> (id -> (answer, time))
+                return dbAbstraction.readSerializable(KEY_MAP_SURVEY_VOTERS, hashMapOf<String, HashMap<String, String>>())
                         .thenCompose { surveyVoters ->
-                            val voterList = surveyVoters[userName] ?: hashMapOf()
+                            val voterList = surveyVoters[userName] ?: hashMapOf() // "voterList": (id -> (answer, time))
+                            // channel -> (id -> list((answer, count)))
                             dbAbstraction.readSerializable(KEY_MAP_SURVEY, hashMapOf<String, HashMap<String, ArrayList<Pair<String, Long>>>>())
                                     .thenCompose { surveyMap ->
-                                        val channelSurveyMap = surveyMap[messageChannelName]
-                                        //change to compose
+                                        val channelSurveyMap = surveyMap[messageChannelName] // list(answer, counter)
+
                                         if (channelSurveyMap != null) {
                                             for ((id, surveyListOfAnswers) in channelSurveyMap) {
                                                 if (voterList.containsKey(id)) {
                                                     for ((i, pair) in surveyListOfAnswers.withIndex()) {
                                                         val answer = pair.first
                                                         val counter = pair.second
-                                                        if (answer == voterList[id]?.first) {
-                                                            surveyListOfAnswers[i] = Pair(answer, counter - 1)
-                                                            voterList.remove(id)
+                                                        if (answer == voterList[id]) {
+                                                            for ((j, pair2) in surveyListOfAnswers.withIndex()) {
+                                                                if (pair2.first == msg.contents.toString(charset)) {
+                                                                    surveyListOfAnswers[i] = Pair(answer, counter - 1)
+                                                                    channelSurveyMap[id] = surveyListOfAnswers
+                                                                    voterList.remove(id)
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -431,7 +424,8 @@ class CourseBotsImpl @Inject constructor(private val app: CourseApp, private val
                                                         val counter = pair.second
                                                         if (answer == msg.contents.toString(charset)) {
                                                             surveyListOfAnswers[i] = Pair(answer, counter + 1)
-                                                            voterList[id] = Pair(answer, msg.created)
+                                                            channelSurveyMap[id] = surveyListOfAnswers
+                                                            voterList[id] = answer
                                                         }
                                                     }
                                                 }

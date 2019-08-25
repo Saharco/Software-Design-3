@@ -23,6 +23,11 @@ class KeywordsTracker : Serializable {
         private val wildcardRegex = Regex("(?s).*")
     }
 
+    private val channelMediaTrackerSet = mutableSetOf<Triple<String, MediaType, String?>>()
+    private val channelTrackerSet = mutableSetOf<Pair<String, String?>>()
+    private val mediaTrackerSet = mutableSetOf<Pair<MediaType, String?>>()
+    private val globalTrackerSet = mutableSetOf<String?>()
+
     private val channelMediaTrackerMap = mutableMapOf<Pair<String, MediaType>, ArrayList<Pair<Regex, Long>>>()
     private val channelTrackerMap = mutableMapOf<String, ArrayList<Pair<Regex, Long>>>()
     private val mediaTrackerMap = mutableMapOf<MediaType, ArrayList<Pair<Regex, Long>>>()
@@ -39,24 +44,29 @@ class KeywordsTracker : Serializable {
     operator fun set(channel: String?, mediaType: MediaType?, stringPattern: String?) {
         val regex = stringToRegex(stringPattern)
 
-        if (sameRegex(regex, wildcardRegex) && mediaType == null)
-            return
+        require(!(sameRegex(regex, wildcardRegex) && mediaType == null)) {
+            "Either regex / media type fields must be non-null"
+        }
 
         if (channel == null && mediaType == null) {
             // map to global tracker
+            globalTrackerSet.add(stringPattern)
             resetExistingRegex(globalTrackers, regex)
         } else if (channel == null && mediaType != null) {
             // map to media tracker
+            mediaTrackerSet.add(Pair(mediaType, stringPattern))
             if (mediaTrackerMap[mediaType] == null)
                 mediaTrackerMap[mediaType] = ArrayList()
             resetExistingRegex(mediaTrackerMap[mediaType]!!, regex)
         } else if (mediaType == null && channel != null) {
             // map to channel tracker
+            channelTrackerSet.add(Pair(channel, stringPattern))
             if (channelTrackerMap[channel] == null)
                 channelTrackerMap[channel] = ArrayList()
             resetExistingRegex(channelTrackerMap[channel]!!, regex)
         } else if (mediaType != null && channel != null) {
             // map to channel-media tracker
+            channelMediaTrackerSet.add(Triple(channel, mediaType, stringPattern))
             val pair = Pair(channel, mediaType)
             if (channelMediaTrackerMap[pair] == null)
                 channelMediaTrackerMap[pair] = ArrayList()
@@ -76,32 +86,29 @@ class KeywordsTracker : Serializable {
     operator fun get(channel: String?, mediaType: MediaType?, stringPattern: String?): Long {
         val regex = stringToRegex(stringPattern)
 
-        if (sameRegex(regex, wildcardRegex) && mediaType == null)
-            return 0L
+        require(!(sameRegex(regex, wildcardRegex) && mediaType == null)) { "Unregistered" }
 
         if (channel == null && mediaType == null) {
             // fetch from global tracker
+            require(globalTrackerSet.contains(stringPattern)) { "Unregistered" }
             return fetchRegexCountFromList(globalTrackers, regex)
         }
 
         if (channel == null && mediaType != null) {
             // fetch from media tracker
-            if (mediaTrackerMap[mediaType] == null)
-                return 0L
+            require(mediaTrackerSet.contains(Pair(mediaType, stringPattern))) { "Unregistered" }
             return fetchRegexCountFromList(mediaTrackerMap[mediaType]!!, regex)
         }
 
         if (mediaType == null && channel != null) {
             // fetch from channel tracker
-            if (channelTrackerMap[channel] == null)
-                return 0L
+            require(channelTrackerSet.contains(Pair(channel, stringPattern))) { "Unregistered" }
             return fetchRegexCountFromList(channelTrackerMap[channel]!!, regex)
         }
 
         // fetch from channel-media tracker
         val pair = Pair(channel, mediaType)
-        if (channelMediaTrackerMap[pair] == null)
-            return 0L
+        require(channelMediaTrackerSet.contains(Triple(channel, mediaType, stringPattern))) { "Unregistered" }
         return fetchRegexCountFromList(channelMediaTrackerMap[pair]!!, regex)
     }
 
