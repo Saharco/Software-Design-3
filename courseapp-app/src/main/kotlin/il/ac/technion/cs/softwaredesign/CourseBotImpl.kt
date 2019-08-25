@@ -162,11 +162,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
     }
 
     override fun beginCount(channel: String?, regex: String?, mediaType: MediaType?): CompletableFuture<Unit> {
-//        if (regex == null && mediaType == null) {
-//            return CompletableFuture.supplyAsync {
-//                throw IllegalArgumentException("Either regex / media type fields must be non-null")
-//            }
-//        }
         return dbAbstraction.readSerializable(KEY_KEYWORDS_TRACKER, KeywordsTracker()).thenApply {
             it ?: KeywordsTracker()
         }.thenCompose {
@@ -243,7 +238,6 @@ class CourseBotImpl @Inject constructor(private val app: CourseApp, private val 
             if (!it.contains(channel))
                 throw NoSuchEntityException()
             msgFactory.create(MediaType.TEXT, question.toByteArray(charset)).thenCompose { message ->
-                //TODO: Send this message in the channel!!!
                 app.channelSend(token, channel, message).thenCompose {
                     val identifier = generateSurveyIdentifier(channel)
                     val newSurveyList = arrayListOf<Pair<String, Long>>()

@@ -342,6 +342,11 @@ class CourseBotStaffTest {
 
 
             assertWithTimeout {
+                /*
+                [34, 23]
+                [46, 654]
+                [2, 70, 95, 15001]
+                 */
                 assertThat(getCalculatedNumbersFromChannel(testData,"#channel_0"), containsElementsInOrder(34L))
                 assertThat(getCalculatedNumbersFromChannel(testData,"#channel_1"), isEmpty)
                 assertThat(getCalculatedNumbersFromChannel(testData,"#channel_3"), containsElementsInOrder(2L,70L))

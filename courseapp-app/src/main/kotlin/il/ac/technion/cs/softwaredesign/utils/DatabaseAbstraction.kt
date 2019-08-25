@@ -15,6 +15,8 @@ import java.util.concurrent.CompletableFuture
  */
 class DatabaseAbstraction(private val db: Database, private val document: String, val id: String) {
 
+    private val deleted = "NULL_LOGICAL_DELETE"
+
     /**
      * Writes a primitive type (such as Int) to the document.
      * @param key - the field's key.
@@ -29,8 +31,8 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                     .thenApply { Unit }
         }
         return db.document(document)
-                .update(id)
-                .remove(key)
+                .create(id)
+                .set(key to deleted)
                 .execute()
                 .thenApply { Unit }
     }
@@ -64,6 +66,12 @@ class DatabaseAbstraction(private val db: Database, private val document: String
                 .find(id, listOf(key))
                 .execute()
                 .thenApply { it?.getAsString(key) }
+                .thenApply {
+                    if(it == deleted)
+                        null
+                    else
+                        it
+                }
     }
 
     /**
